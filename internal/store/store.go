@@ -84,3 +84,45 @@ func (s *Store) Delete(key []byte) error {
 	delete(s.data, string(key))
 	return nil
 }
+
+// Entry is one key/value pair, used only by Dump/Restore (Raft snapshots).
+type Entry struct {
+	Key   []byte
+	Value []byte
+}
+
+// Dump returns every key/value pair currently in the store, for use as a
+// Raft snapshot (internal/raftnode.FSM.Snapshot). It does not go through
+// the WAL -- a snapshot is a point-in-time copy of already-durable state,
+// not a new write.
+func (s *Store) Dump() []Entry {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	entries := make([]Entry, 0, len(s.data))
+	for k, v := range s.data {
+		entries = append(entries, Entry{Key: []byte(k), Value: v})
+	}
+	return entries
+}
+
+// Restore replaces the store's entire contents with entries -- used when
+// Raft installs a snapshot (internal/raftnode.FSM.Restore), which replaces
+// local state wholesale rather than applying it incrementally. It resets
+// the WAL rather than appending: appending would leave stale pre-snapshot
+// records behind that Replay would incorrectly resurrect on next restart.
+func (s *Store) Restore(entries []Entry) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	records := make([]wal.Record, len(entries))
+	data := make(map[string][]byte, len(entries))
+	for i, e := range entries {
+		records[i] = wal.Record{Op: wal.OpPut, Key: e.Key, Value: e.Value}
+		data[string(e.Key)] = e.Value
+	}
+	if err := s.wal.Reset(records); err != nil {
+		return fmt.Errorf("store: restore: %w", err)
+	}
+	s.data = data
+	return nil
+}

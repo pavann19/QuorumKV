@@ -54,7 +54,8 @@ const headerLen = 4 + 4 // recordLen + CRC32
 // returning nil is a durability promise a caller (e.g. a KV store's Put)
 // can rely on even across a hard crash immediately afterward.
 type WAL struct {
-	f *os.File
+	path string
+	f    *os.File
 }
 
 // Open opens (creating if necessary) the WAL file at path for appending.
@@ -63,7 +64,7 @@ func Open(path string) (*WAL, error) {
 	if err != nil {
 		return nil, fmt.Errorf("wal: opening %s: %w", path, err)
 	}
-	return &WAL{f: f}, nil
+	return &WAL{path: path, f: f}, nil
 }
 
 // Close closes the underlying file. It does not fsync -- callers that need
@@ -90,6 +91,58 @@ func (w *WAL) Append(rec Record) error {
 	if err := w.f.Sync(); err != nil {
 		return fmt.Errorf("wal: fsync: %w", err)
 	}
+	return nil
+}
+
+// Reset atomically replaces the WAL's entire contents with records: it
+// writes a fresh file (fsynced) and renames it over the original path,
+// then reopens for appending. Used when a Raft snapshot install replaces
+// local state wholesale (internal/store.Store.Restore) -- appending the
+// snapshot's entries to the *existing* log would leave stale pre-snapshot
+// records behind, which Replay would then incorrectly resurrect on the
+// next restart (a record for a key the snapshot no longer has would still
+// replay as if it were current).
+func (w *WAL) Reset(records []Record) error {
+	tmpPath := w.path + ".tmp"
+	tmp, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	if err != nil {
+		return fmt.Errorf("wal: creating temp file for reset: %w", err)
+	}
+	for _, rec := range records {
+		body := encodeBody(rec)
+		sum := crc32.ChecksumIEEE(body)
+		buf := make([]byte, headerLen+len(body))
+		binary.LittleEndian.PutUint32(buf[0:4], uint32(len(body)))
+		binary.LittleEndian.PutUint32(buf[4:8], sum)
+		copy(buf[headerLen:], body)
+		if _, err := tmp.Write(buf); err != nil {
+			tmp.Close()
+			os.Remove(tmpPath)
+			return fmt.Errorf("wal: writing record during reset: %w", err)
+		}
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("wal: fsync during reset: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("wal: closing temp file during reset: %w", err)
+	}
+
+	if err := w.f.Close(); err != nil {
+		return fmt.Errorf("wal: closing old file during reset: %w", err)
+	}
+	if err := os.Rename(tmpPath, w.path); err != nil {
+		return fmt.Errorf("wal: renaming reset file into place: %w", err)
+	}
+
+	f, err := os.OpenFile(w.path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o644)
+	if err != nil {
+		return fmt.Errorf("wal: reopening after reset: %w", err)
+	}
+	w.f = f
 	return nil
 }
 
