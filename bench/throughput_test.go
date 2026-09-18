@@ -18,6 +18,7 @@ const opsPerThroughputRun = 100
 type throughputResult struct {
 	Timestamp        time.Time `json:"timestamp"`
 	ClusterSize      int       `json:"cluster_size"`
+	Workload         string    `json:"workload"`
 	SampleSize       int       `json:"sample_size"`
 	MinMS            float64   `json:"min_ms"`
 	P50MS            float64   `json:"p50_ms"`
@@ -26,7 +27,7 @@ type throughputResult struct {
 	MaxMS            float64   `json:"max_ms"`
 	MeanMS           float64   `json:"mean_ms"`
 	TotalDurationMS  float64   `json:"total_duration_ms"`
-	ThroughputPerSec float64   `json:"throughput_per_sec"`
+	ThroughputPerSec float64   `json:"sequential_ops_per_sec"`
 	Environment      string    `json:"environment"`
 }
 
@@ -62,6 +63,7 @@ func measureThroughput(t *testing.T, clusterSize, basePort int) throughputResult
 	return throughputResult{
 		Timestamp:        time.Now().UTC(),
 		ClusterSize:      clusterSize,
+		Workload:         "sequential Puts from a single client, one in flight at a time (a latency measurement; ops/sec here is 1/latency, not a concurrency-scaled throughput ceiling)",
 		SampleSize:       n,
 		MinMS:            samples[0],
 		P50MS:            percentile(samples, 0.50),

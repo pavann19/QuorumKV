@@ -1,6 +1,8 @@
 package fault
 
 import (
+	"math"
+
 	"github.com/anishathalye/porcupine"
 )
 
@@ -71,18 +73,36 @@ var kvModel = porcupine.Model{
 	},
 }
 
-// toOperations converts recorded Ops into Porcupine's Operation type,
-// excluding any Op whose Err is non-empty: an operation that never
-// received a definitive response has an unknown effect on server state
-// (it may or may not have committed), and including it with a guessed
-// outcome would make the check either meaningless or unfairly strict.
-// This mirrors standard practice in linearizability testing (e.g. Jepsen)
-// of treating indeterminate operations as excluded from the checked
-// history rather than asserting an outcome for them.
+// toOperations converts recorded Ops into Porcupine's Operation type.
+//
+// A Put that errored after all retries has an unknown outcome: it may have
+// committed (e.g. the leader applied it and died before replying) or not.
+// Dropping it, as an earlier version of this file did, can hide a real
+// violation: a later Get that returns that Put's value would then look like
+// a read of a value nobody wrote -- or, worse, an errored Put that DID take
+// effect would silently vanish from the check. Instead it is kept as an
+// operation that never returned (Return = MaxInt64): the checker may
+// linearize it at any point after its call, which covers "it happened,
+// somewhere in that window", or after every other operation, which is
+// indistinguishable from "it never happened". That is the standard
+// treatment of indeterminate operations (Jepsen's :info operations).
+//
+// An errored Get has no effect on state whichever way it went, so it is
+// the one kind of operation that is still safe to drop.
 func toOperations(history []Op) []porcupine.Operation {
 	ops := make([]porcupine.Operation, 0, len(history))
 	for _, o := range history {
 		if o.Err != "" {
+			if o.Kind != "put" {
+				continue
+			}
+			ops = append(ops, porcupine.Operation{
+				ClientId: o.ClientID,
+				Input:    kvInput{Key: o.Key, Kind: o.Kind, Value: o.Value},
+				Call:     o.CallNS,
+				Output:   kvOutput{},
+				Return:   math.MaxInt64,
+			})
 			continue
 		}
 		ops = append(ops, porcupine.Operation{

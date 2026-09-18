@@ -25,11 +25,13 @@ verified so far.
 - **M2** — the fault-injection harness, "the actual point of the project" per the plan's own words:
   a Toxiproxy-style per-edge proxy (`internal/faultproxy`) between every pair of nodes, and 5 real
   fault scenarios (leader partition, minority partition, rolling restarts, network delay, double
-  leader attempt) each producing a committed history and a real Porcupine linearizability **PASS**
+  leader attempt) each producing a committed history (18–40 operations) and a Porcupine linearizability
+  **PASS**, with the checker itself validated against hand-built histories it must reject
   — [test/fault](test/fault), results committed at
   [test/fault/results/](test/fault/results/).
 - **M3** — measured failover time (10 independent trials: p50 2.0s, p90 2.6s) and
-  throughput/latency at cluster sizes 3 and 5 (230 ops/sec vs. 215 ops/sec), committed as raw JSON,
+  sequential single-client `Put` latency at cluster sizes 3 and 5 (p50 4.3 ms vs. 6.6 ms; one run
+  each, and the 5-node figure varied noticeably between runs), committed as raw JSON,
   not hand-typed — [bench](bench), results at [bench/results/](bench/results/).
 
 See [docs/DECISIONS.md](docs/DECISIONS.md) for every trade-off write-up, including the real bugs

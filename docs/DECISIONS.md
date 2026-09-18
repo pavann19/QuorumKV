@@ -152,15 +152,36 @@ passing with a committed history and a Porcupine PASS** (`test/fault/results/*.j
    known"` — it had already stepped down (a real hashicorp/raft leadership-lease behavior, not a
    contrived response) once it detected it couldn't confirm quorum.
 
-**Indeterminate operations are excluded from the linearizability check, not guessed at.** A client
-operation whose RPC times out or errors has an *unknown* effect on server state — it may or may not
-have committed. `test/fault`'s workload retries such operations against a different node until it
-gets a definitive success or an overall deadline passes; if it never gets a definitive answer, that
-operation is excluded from the Porcupine history entirely (logged, and visible in the committed
-JSON's op count vs. checked count) rather than asserting an outcome for it. This mirrors standard
-practice in real linearizability testing (e.g. Jepsen) — asserting a guessed outcome for an
-indeterminate operation would make the check either meaningless (if too lenient) or unfairly strict
-(if it assumes failure for an op that actually silently committed).
+**The checker was validated against known-bad histories, not just the scenarios' own.** Five
+"linearizable" verdicts only show the checker accepts the histories those scenarios produced.
+`test/fault/model_test.go` feeds it hand-built histories with no cluster involved: a stale read
+(both Puts complete, then a Get returns the older value), a read of a never-written value,
+not-found after a completed Put, and two reads observing writes in contradictory orders. The checker
+must reject all four, and does. It also has positive controls (a latest read, a read overlapping an
+in-flight write, independent keys) so that "rejects everything" would fail too.
+
+**Errored Puts are checked as "may have happened," not dropped.** An earlier version of
+`toOperations` dropped any operation that still errored after retries, and its comment claimed that
+mirrored Jepsen. That was wrong on both counts: dropping a Put that actually committed can hide a real
+violation, and Jepsen keeps such operations as open-ended `:info` operations. Now an errored Put is kept
+with no return time (`Return = MaxInt64`), so the checker may place it anywhere after its call — which
+covers "it took effect" — or after everything else, which is indistinguishable from "it never
+happened." Controls cover both readings (a later read of the errored Put's value is accepted; a read
+of the old value is accepted) and the limits (an errored Put cannot excuse a stale read, and cannot be
+observed and then unobserved). Errored Gets are still dropped: a read has no effect on state either
+way.
+
+**Limit: that path has not been exercised by a live run.** In every committed scenario history all
+operations completed (0 errored), so the may-have-happened handling is verified only by the unit
+controls above, not by a real crash-mid-write in a cluster. The retry budgets (15–30s) are generous
+enough that nothing errored; tightening them until writes genuinely time out is the way to make this
+path fire for real.
+
+**Limit: the histories are small.** Each committed history is 18–40 operations across 3–4 keys and
+3–4 clients. Linearizability checking is exponential in the worst case, which is part of why these are
+small, but it also means a subtle violation that needs more interleaving than 18–40 operations
+provide could go unseen. A PASS here means "no violation in these histories," not "linearizable in
+general."
 
 **What actually happened when this ran, not what was expected to happen:** all 5 scenarios passed
 on the very first complete run, with 0 operations excluded as indeterminate in every scenario (every
@@ -200,19 +221,27 @@ against the leader of a healthy cluster.
 
 | Cluster size | p50 | p90 | p99 | Throughput |
 |---|---|---|---|---|
-| 3 nodes | 4.27 ms | 5.29 ms | 6.16 ms | 230.4 ops/sec |
-| 5 nodes | 4.77 ms | 5.35 ms | 6.54 ms | 215.1 ops/sec |
+| 3 nodes | 4.29 ms | 4.93 ms | 5.97 ms | 227.8 ops/sec |
+| 5 nodes | 6.59 ms | 15.07 ms | 18.65 ms | 111.9 ops/sec |
 
 The 5-node cluster is measurably slower and lower-throughput than the 3-node one — expected, since
 the leader must wait for acknowledgment from a majority (3 of 5, vs. 2 of 3), and the additional
 network round trips to the extra replicas add latency to every write. This is exactly the tradeoff
 Raft cluster sizing is about, now measured rather than assumed.
 
-**What this doesn't measure, stated plainly:** these are sequential (not concurrent/pipelined)
-writes against a single client, on localhost (no real network latency between "nodes"), so the
-throughput numbers reflect this implementation's per-operation overhead more than any realistic
-production ceiling. A concurrent-client throughput ceiling and a real multi-host network latency
-component are both open questions this benchmark doesn't answer.
+**What this measures, stated plainly:** each run is 100 `Put`s issued one at a time by a single
+client (`bench/throughput_test.go`'s loop has exactly one operation in flight), so this is a
+per-operation *latency* measurement. "ops/sec" is just 1/latency, not a concurrency-scaled throughput
+ceiling — the committed JSON labels it `sequential_ops_per_sec` for that reason. A concurrent-client
+ceiling has not been measured.
+
+**Where it runs:** three or five `quorumkv-node` OS processes on one machine (loopback, no real
+network latency, no containers), and each size is measured once. The 5-node result is visibly
+unstable: an earlier run of the same benchmark gave p50 4.77 ms / 215 ops/sec, and the run committed
+here gave p50 6.59 ms / 112 ops/sec, with a p90 of 15 ms. The 3-node number was steady across runs
+(230 vs. 228 ops/sec). So the direction (5 nodes slower than 3) is expected, but the 5-node
+magnitude should not be quoted as a stable figure without repeated runs and a distribution, the way
+the failover benchmark does.
 
 ## Windows `Kill()` vs. Linux `SIGKILL`, stated honestly
 

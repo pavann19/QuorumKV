@@ -1,248 +1,248 @@
 {
   "scenario": "rolling_restarts",
-  "timestamp": "2026-09-18T12:51:16.6221669Z",
+  "timestamp": "2026-09-18T14:36:33.6812888Z",
   "linearizable": true,
   "op_count": 32,
   "ops": [
     {
-      "client_id": 2,
+      "client_id": 3,
+      "kind": "get",
+      "key": "kb",
+      "call_ns": 1789742189077820000,
+      "return_ns": 1789742189078902900
+    },
+    {
+      "client_id": 0,
       "kind": "get",
       "key": "kd",
-      "call_ns": 1789735872025909100,
-      "return_ns": 1789735872027614500
+      "call_ns": 1789742189077820000,
+      "return_ns": 1789742189078902900
     },
     {
       "client_id": 3,
       "kind": "get",
       "key": "kb",
-      "call_ns": 1789735872025371500,
-      "return_ns": 1789735872027614500
+      "call_ns": 1789742189078902900,
+      "return_ns": 1789742189079441500
     },
     {
-      "client_id": 2,
-      "kind": "get",
-      "key": "kb",
-      "call_ns": 1789735872027614500,
-      "return_ns": 1789735872028152900
-    },
-    {
-      "client_id": 2,
+      "client_id": 3,
       "kind": "get",
       "key": "kd",
-      "call_ns": 1789735872028152900,
-      "return_ns": 1789735872028770800
+      "call_ns": 1789742189079441500,
+      "return_ns": 1789742189079441500
     },
     {
-      "client_id": 0,
+      "client_id": 2,
       "kind": "put",
       "key": "ka",
       "value": "v4",
-      "call_ns": 1789735872025909100,
-      "return_ns": 1789735872034902300
+      "call_ns": 1789742189077820000,
+      "return_ns": 1789742189083695300
     },
     {
-      "client_id": 0,
+      "client_id": 2,
       "kind": "get",
       "key": "kb",
-      "call_ns": 1789735872034902300,
-      "return_ns": 1789735872036001700
+      "call_ns": 1789742189083695300,
+      "return_ns": 1789742189083695300
     },
     {
       "client_id": 1,
       "kind": "put",
       "key": "kc",
       "value": "v2",
-      "call_ns": 1789735872025371500,
-      "return_ns": 1789735872036001700
+      "call_ns": 1789742189077820000,
+      "return_ns": 1789742189086879200
     },
     {
-      "client_id": 1,
-      "kind": "get",
-      "key": "kd",
-      "call_ns": 1789735872036001700,
-      "return_ns": 1789735872037088500
-    },
-    {
-      "client_id": 3,
+      "client_id": 0,
       "kind": "put",
       "key": "kc",
       "value": "v6",
-      "call_ns": 1789735872027614500,
-      "return_ns": 1789735872037088500
+      "call_ns": 1789742189078902900,
+      "return_ns": 1789742189089112100
     },
     {
-      "client_id": 2,
+      "client_id": 1,
+      "kind": "get",
+      "key": "kd",
+      "call_ns": 1789742189086879200,
+      "return_ns": 1789742189089112100
+    },
+    {
+      "client_id": 1,
+      "kind": "get",
+      "key": "kb",
+      "call_ns": 1789742189089112100,
+      "return_ns": 1789742189090375400
+    },
+    {
+      "client_id": 3,
       "kind": "put",
       "key": "ka",
       "value": "v8",
-      "call_ns": 1789735872028770800,
-      "return_ns": 1789735872038169000
+      "call_ns": 1789742189079441500,
+      "return_ns": 1789742189090914100
     },
     {
-      "client_id": 3,
-      "kind": "get",
-      "key": "kb",
-      "call_ns": 1789735872037088500,
-      "return_ns": 1789735872038169000
-    },
-    {
-      "client_id": 3,
-      "kind": "get",
-      "key": "kd",
-      "call_ns": 1789735872038169000,
-      "return_ns": 1789735872038169000
-    },
-    {
-      "client_id": 0,
+      "client_id": 2,
       "kind": "put",
       "key": "kc",
       "value": "v10",
-      "call_ns": 1789735872036001700,
-      "return_ns": 1789735872042528400
+      "call_ns": 1789742189083695300,
+      "return_ns": 1789742189092026000
     },
     {
-      "client_id": 1,
+      "client_id": 3,
+      "kind": "get",
+      "key": "kd",
+      "call_ns": 1789742189090914100,
+      "return_ns": 1789742189092026000
+    },
+    {
+      "client_id": 3,
+      "kind": "get",
+      "key": "kb",
+      "call_ns": 1789742189092026000,
+      "return_ns": 1789742189092587700
+    },
+    {
+      "client_id": 0,
       "kind": "put",
       "key": "ka",
       "value": "v12",
-      "call_ns": 1789735872037088500,
-      "return_ns": 1789735872043599300
+      "call_ns": 1789742189089112100,
+      "return_ns": 1789742189096023500
     },
     {
-      "client_id": 0,
-      "kind": "get",
-      "key": "kb",
-      "call_ns": 1789735872042528400,
-      "return_ns": 1789735872043599300
-    },
-    {
-      "client_id": 0,
-      "kind": "get",
-      "key": "kd",
-      "call_ns": 1789735872043599300,
-      "return_ns": 1789735872044138300
-    },
-    {
-      "client_id": 2,
+      "client_id": 1,
       "kind": "put",
       "key": "kc",
       "value": "v14",
-      "call_ns": 1789735872038169000,
-      "return_ns": 1789735872046868200
+      "call_ns": 1789742189090375400,
+      "return_ns": 1789742189097092800
+    },
+    {
+      "client_id": 0,
+      "kind": "get",
+      "key": "kd",
+      "call_ns": 1789742189096023500,
+      "return_ns": 1789742189097092800
+    },
+    {
+      "client_id": 0,
+      "kind": "get",
+      "key": "kb",
+      "call_ns": 1789742189097092800,
+      "return_ns": 1789742189097635900
     },
     {
       "client_id": 2,
-      "kind": "get",
-      "key": "kb",
-      "call_ns": 1789735872046868200,
-      "return_ns": 1789735872048524500
-    },
-    {
-      "client_id": 3,
       "kind": "put",
       "key": "ka",
       "value": "v16",
-      "call_ns": 1789735872038169000,
-      "return_ns": 1789735872048524500
+      "call_ns": 1789742189092026000,
+      "return_ns": 1789742189100322300
     },
     {
-      "client_id": 1,
+      "client_id": 2,
+      "kind": "get",
+      "key": "kd",
+      "call_ns": 1789742189100322300,
+      "return_ns": 1789742189101410600
+    },
+    {
+      "client_id": 3,
       "kind": "put",
       "key": "kc",
       "value": "v18",
-      "call_ns": 1789735872043599300,
-      "return_ns": 1789735872050215500
-    },
-    {
-      "client_id": 3,
-      "kind": "get",
-      "key": "kd",
-      "call_ns": 1789735872048524500,
-      "return_ns": 1789735872050215500
-    },
-    {
-      "client_id": 3,
-      "kind": "get",
-      "key": "kb",
-      "call_ns": 1789735872050215500,
-      "return_ns": 1789735872052027300
-    },
-    {
-      "client_id": 0,
-      "kind": "put",
-      "key": "ka",
-      "value": "v20",
-      "call_ns": 1789735872044138300,
-      "return_ns": 1789735872052027300
-    },
-    {
-      "client_id": 0,
-      "kind": "get",
-      "key": "kd",
-      "call_ns": 1789735872052027300,
-      "return_ns": 1789735872052564800
-    },
-    {
-      "client_id": 2,
-      "kind": "put",
-      "key": "kc",
-      "value": "v22",
-      "call_ns": 1789735872048524500,
-      "return_ns": 1789735872057752000
-    },
-    {
-      "client_id": 2,
-      "kind": "get",
-      "key": "kb",
-      "call_ns": 1789735872057752000,
-      "return_ns": 1789735872058800500
+      "call_ns": 1789742189092587700,
+      "return_ns": 1789742189101410600
     },
     {
       "client_id": 1,
       "kind": "put",
       "key": "ka",
-      "value": "v24",
-      "call_ns": 1789735872050215500,
-      "return_ns": 1789735872058800500
+      "value": "v20",
+      "call_ns": 1789742189097092800,
+      "return_ns": 1789742189103018900
     },
     {
       "client_id": 3,
+      "kind": "get",
+      "key": "kb",
+      "call_ns": 1789742189101410600,
+      "return_ns": 1789742189103018900
+    },
+    {
+      "client_id": 0,
+      "kind": "put",
+      "key": "kc",
+      "value": "v22",
+      "call_ns": 1789742189097635900,
+      "return_ns": 1789742189106837600
+    },
+    {
+      "client_id": 0,
+      "kind": "get",
+      "key": "kd",
+      "call_ns": 1789742189106837600,
+      "return_ns": 1789742189109017800
+    },
+    {
+      "client_id": 2,
+      "kind": "put",
+      "key": "ka",
+      "value": "v24",
+      "call_ns": 1789742189101410600,
+      "return_ns": 1789742189109017800
+    },
+    {
+      "client_id": 2,
+      "kind": "get",
+      "key": "kb",
+      "call_ns": 1789742189109017800,
+      "return_ns": 1789742189110069800
+    },
+    {
+      "client_id": 1,
       "kind": "put",
       "key": "kc",
       "value": "v26",
-      "call_ns": 1789735872052027300,
-      "return_ns": 1789735872059872400
+      "call_ns": 1789742189103018900,
+      "return_ns": 1789742189110069800
+    },
+    {
+      "client_id": 1,
+      "kind": "get",
+      "key": "kd",
+      "call_ns": 1789742189110069800,
+      "return_ns": 1789742189110591700
     },
     {
       "client_id": 0,
       "kind": "put",
       "key": "ka",
       "value": "v28",
-      "call_ns": 1789735872052564800,
-      "return_ns": 1789735872060950100
+      "call_ns": 1789742189109017800,
+      "return_ns": 1789742189115370200
     },
     {
-      "client_id": 1,
+      "client_id": 2,
       "kind": "put",
       "key": "kc",
       "value": "v30",
-      "call_ns": 1789735872058800500,
-      "return_ns": 1789735872063100600
-    },
-    {
-      "client_id": 1,
-      "kind": "get",
-      "key": "kd",
-      "call_ns": 1789735872063100600,
-      "return_ns": 1789735872063100600
+      "call_ns": 1789742189110069800,
+      "return_ns": 1789742189116958100
     },
     {
       "client_id": 1,
       "kind": "put",
       "key": "ka",
       "value": "v32",
-      "call_ns": 1789735872063100600,
-      "return_ns": 1789735872067374900
+      "call_ns": 1789742189110591700,
+      "return_ns": 1789742189117584100
     }
   ]
 }

@@ -18,14 +18,19 @@ import (
 func CheckAndCommit(t *testing.T, name string, history []Op) {
 	t.Helper()
 
-	included := 0
+	definite, pendingPuts, droppedGets := 0, 0, 0
 	for _, o := range history {
-		if o.Err == "" {
-			included++
+		switch {
+		case o.Err == "":
+			definite++
+		case o.Kind == "put":
+			pendingPuts++
+		default:
+			droppedGets++
 		}
 	}
-	t.Logf("%s: %d operations recorded, %d included in the linearizability check (%d excluded: indeterminate outcome after retries were exhausted)",
-		name, len(history), included, len(history)-included)
+	t.Logf("%s: %d operations recorded: %d completed, %d errored Puts checked as may-have-happened, %d errored Gets dropped (no effect on state)",
+		name, len(history), definite, pendingPuts, droppedGets)
 
 	ops := toOperations(history)
 	result, info := porcupine.CheckOperationsVerbose(kvModel, ops, 30*time.Second)
@@ -45,7 +50,7 @@ func CheckAndCommit(t *testing.T, name string, history []Op) {
 		t.Fatalf("%s: history is not linearizable (Porcupine result: %s) -- see test/fault/results/%s.json", name, result, name)
 	}
 
-	t.Logf("%s: PASS -- history is linearizable (%d ops checked)", name, included)
+	t.Logf("%s: PASS -- history is linearizable (%d ops checked)", name, len(ops))
 }
 
 func writeVisualization(name string, info porcupine.LinearizationInfo) (string, error) {
