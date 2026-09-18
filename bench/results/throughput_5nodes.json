@@ -1,0 +1,14 @@
+{
+  "timestamp": "2026-09-18T12:52:07.7572674Z",
+  "cluster_size": 5,
+  "sample_size": 100,
+  "min_ms": 3.717,
+  "p50_ms": 4.395,
+  "p90_ms": 5.091,
+  "p99_ms": 5.918,
+  "max_ms": 6.383,
+  "mean_ms": 4.62228,
+  "total_duration_ms": 462.272,
+  "throughput_per_sec": 216.32262356077857,
+  "environment": "multi-process cluster on localhost (real Raft consensus, real gRPC, no container/kubelet overhead)"
+}

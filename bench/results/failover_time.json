@@ -1,0 +1,22 @@
+{
+  "timestamp": "2026-09-18T12:52:04.3992438Z",
+  "sample_size": 10,
+  "min_ms": 1597.739,
+  "p50_ms": 2105.805,
+  "p90_ms": 2458.229,
+  "max_ms": 2617.912,
+  "mean_ms": 2105.6091,
+  "samples_ms": [
+    1597.739,
+    1702.302,
+    1753.893,
+    1797.995,
+    2105.805,
+    2304.874,
+    2357.646,
+    2359.696,
+    2458.229,
+    2617.912
+  ],
+  "environment": "3-process cluster on localhost, no kind/kubelet/container overhead"
+}

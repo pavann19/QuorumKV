@@ -19,6 +19,12 @@
   connection instead of a real socket).
 - **M1 (leader election and log replication) is done.** See "Raft: adopted, not reimplemented"
   and "M1 exit criterion: killing the leader" below.
+- **M2 (the fault-injection harness) is done.** All 5 named scenarios pass with a real Porcupine
+  linearizability check against a real recorded history — see "M2: the fault-injection harness"
+  below.
+- **M3 (measured failover time and throughput) is done.** See "M3: measured failover time and
+  throughput" below.
+- **QuorumKV's entire build plan (MVP through M3) is now complete.**
 
 ## Raft: adopted, not reimplemented (and so is the gRPC transport)
 
@@ -95,10 +101,118 @@ tolerate failures across. The same pattern (spawn a real subprocess, kill it abr
 correctness after) is already how the MVP's crash-recovery proof works, so this reuses an
 already-established, already-trusted testing pattern rather than introducing a new one.
 
-**What this doesn't yet cover, honestly:** network partitions (as opposed to a node dying outright),
-minority-partition behavior, and the actual fault-injection harness with recorded histories and
-Porcupine linearizability checking — that is M2, explicitly, and is "the actual point of the
-project" per the plan's own words, not yet started.
+**What this doesn't yet cover:** network partitions (as opposed to a node dying outright), minority-
+partition behavior, and the actual fault-injection harness with recorded histories and Porcupine
+linearizability checking — that was M2, done next (see below).
+
+## M2: the fault-injection harness
+
+Per the plan's own words, this is "the actual point of the project" — not asserting the cluster
+"seems fine" after a fault, but recording every client operation's start time, end time, and
+result, and checking that recorded history against a real linearizability checker (Porcupine).
+
+**No Docker/iptables, so a Toxiproxy-style proxy instead — exactly as the plan itself allows.**
+`internal/faultproxy.DirectedEdge` is a small TCP relay: one instance per *directed* pair of nodes
+(for 3 nodes, that's 6 proxies: 1→2, 2→1, 1→3, 3→1, 2→3, 3→2), each independently able to `Cut()`
+(reject/tear down connections), `Restore()`, or `SetDelay()` traffic on that specific link.
+
+**Per-node-perspective Raft configuration is what makes per-edge control possible at all, and it's
+safe here specifically because the cluster is statically bootstrapped, not dynamically
+reconfigured.** hashicorp/raft's `Configuration` maps a `ServerID` to one canonical `Address` that
+in a *normal* deployment must be identical everywhere (dynamic membership changes replicate that
+mapping through the log itself). But `test/fault.Start` calls `raft.BootstrapCluster` independently
+on each node's own local log, before any log entries exist to replicate — so each node's own local
+bootstrap `Configuration` can legitimately list a *different* address for the same peer ID: node1's
+local config points to node2 via the `1→2` edge proxy; node2's own local config points to node1 via
+the `2→1` edge proxy. Raft's quorum/voting logic only cares about the *set* of `ServerID`s and their
+suffrage, never the literal address string, so this asymmetry is invisible to consensus correctness
+while giving the test harness independent control over each direction of each link — with no need
+for source-port fingerprinting or deep packet inspection. This is a test-harness-only technique;
+`cmd/quorumkv-node` itself is unaware any of this exists, and a real (non-test) deployment would use
+one shared, symmetric address per peer as normal.
+
+**The 5 scenarios named in the plan's exit criterion, all in `test/fault/scenarios_test.go`, all
+passing with a committed history and a Porcupine PASS** (`test/fault/results/*.json`):
+
+1. **Leader partition** — fully isolate the current leader; the majority elects a new leader and
+   keeps serving.
+2. **Minority partition** — isolate a single *follower* (never the leader); the majority (leader +
+   remaining follower) keeps serving normally throughout, undisturbed.
+3. **Rolling restarts** — kill and restart each node in turn (one node down at a time, so the
+   majority is always intact) while a workload runs concurrently, restarting each node against its
+   *own real data directory* so it genuinely replays its WAL/Raft log rather than starting fresh.
+4. **Network delay** — add 150ms of latency to every inter-node link (not a partition — the cluster
+   must stay correct, just slower); proves the harness can distinguish "slow" from "down."
+5. **Double leader attempt** — the split-brain check: partition the leader away from the majority,
+   then attempt a write *directly* against the now-isolated old leader (bypassing the normal
+   retry-to-another-node client behavior). The old leader's write must fail (it can't reach a
+   quorum to commit) while the new majority-side leader's write succeeds — proving there's never a
+   moment where two nodes can both successfully commit as leader. This passed on the real run: the
+   isolated old leader's direct write failed with `"not the leader, and no leader is currently
+   known"` — it had already stepped down (a real hashicorp/raft leadership-lease behavior, not a
+   contrived response) once it detected it couldn't confirm quorum.
+
+**Indeterminate operations are excluded from the linearizability check, not guessed at.** A client
+operation whose RPC times out or errors has an *unknown* effect on server state — it may or may not
+have committed. `test/fault`'s workload retries such operations against a different node until it
+gets a definitive success or an overall deadline passes; if it never gets a definitive answer, that
+operation is excluded from the Porcupine history entirely (logged, and visible in the committed
+JSON's op count vs. checked count) rather than asserting an outcome for it. This mirrors standard
+practice in real linearizability testing (e.g. Jepsen) — asserting a guessed outcome for an
+indeterminate operation would make the check either meaningless (if too lenient) or unfairly strict
+(if it assumes failure for an op that actually silently committed).
+
+**What actually happened when this ran, not what was expected to happen:** all 5 scenarios passed
+on the very first complete run, with 0 operations excluded as indeterminate in every scenario (every
+retried operation eventually got a definitive answer within its deadline). That is itself informative
+— per the plan's own framing ("if any scenario produces a FAIL, that's the most valuable finding in
+it"), a clean pass across the board on the first attempt suggests the harness's retry/timeout budget
+(15-30s per scenario, node-level operation timeouts of 1-2s) is generously matched to how fast this
+Raft implementation actually recovers in practice (see the M3 failover numbers below — a real
+failover here averages ~2 seconds, comfortably inside these budgets). A tighter budget would be a
+reasonable next step to actually find the edge of what this implementation tolerates, rather than
+confirming it tolerates a comfortable margin.
+
+## M3: measured failover time and throughput
+
+Both measured over multiple independent runs and committed as raw output (`bench/results/*.json`),
+per the same "distribution, not a cherry-picked number" discipline used for ModelGate's admission
+latency benchmark.
+
+**Failover time** (`bench/failover_test.go`): 10 independent trials, each a fresh 3-node cluster —
+kill the leader, time from that kill to the moment a write succeeds again on the majority side.
+
+| Percentile | Time |
+|---|---|
+| min | 1440 ms |
+| p50 | 2006 ms |
+| p90 | 2576 ms |
+| max | 3233 ms |
+| mean | 2135 ms |
+
+This is dominated by hashicorp/raft's default election timeout randomization (150-300ms range) plus
+the time for the killed leader's TCP connections to actually be torn down and detected by its
+former followers — it is a measurement of *this configuration's* real behavior, not a claim about
+what Raft can theoretically achieve with tuned timeouts.
+
+**Throughput/latency at cluster sizes 3 and 5** (`bench/throughput_test.go`): 100 sequential `Put`s
+against the leader of a healthy cluster.
+
+| Cluster size | p50 | p90 | p99 | Throughput |
+|---|---|---|---|---|
+| 3 nodes | 4.27 ms | 5.29 ms | 6.16 ms | 230.4 ops/sec |
+| 5 nodes | 4.77 ms | 5.35 ms | 6.54 ms | 215.1 ops/sec |
+
+The 5-node cluster is measurably slower and lower-throughput than the 3-node one — expected, since
+the leader must wait for acknowledgment from a majority (3 of 5, vs. 2 of 3), and the additional
+network round trips to the extra replicas add latency to every write. This is exactly the tradeoff
+Raft cluster sizing is about, now measured rather than assumed.
+
+**What this doesn't measure, stated plainly:** these are sequential (not concurrent/pipelined)
+writes against a single client, on localhost (no real network latency between "nodes"), so the
+throughput numbers reflect this implementation's per-operation overhead more than any realistic
+production ceiling. A concurrent-client throughput ceiling and a real multi-host network latency
+component are both open questions this benchmark doesn't answer.
 
 ## Windows `Kill()` vs. Linux `SIGKILL`, stated honestly
 

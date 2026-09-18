@@ -15,4 +15,40 @@ jobs:
           go-version: '1.24'
       - run: go build ./...
       - run: go vet ./...
-      - run: go test ./... -v -race -timeout 300s
+      # Fast, deterministic unit/integration tests. test/cluster, test/fault,
+      # and bench/ each spawn real multi-process clusters and take real wall
+      # time -- their own job below, so a quick push doesn't wait on them
+      # unnecessarily and a failure there is easy to spot separately.
+      - run: go test $(go list ./... | grep -vE '(test/cluster|test/fault|/bench)') -v -race -timeout 60s
+
+  cluster-and-fault:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Multi-process cluster tests (M1 exit criterion)
+        run: go test ./test/cluster/... -v -timeout 120s
+      - name: Fault-injection scenarios + linearizability checks (M2 exit criterion)
+        run: go test ./test/fault/... -v -timeout 180s
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fault-histories
+          path: test/fault/results/
+
+  bench:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Measured failover time and throughput/latency (M3 exit criterion)
+        run: go test ./bench/... -v -timeout 300s
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-results
+          path: bench/results/
