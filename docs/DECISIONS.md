@@ -30,7 +30,8 @@
 
 `internal/raftnode` wraps `github.com/hashicorp/raft` for consensus and
 `github.com/Jille/raft-grpc-transport` for the wire protocol between nodes. Neither Raft itself nor
-the RPC transport is implemented from scratch here.
+the RPC transport is implemented from scratch here. The exact ownership boundary is also summarized
+in [RAFT_BOUNDARY.md](RAFT_BOUNDARY.md).
 
 **Why, for Raft:** the build plan says this explicitly — "focus your engineering on the harness,
 not reinventing Raft... since 'which parts did I actually build vs. use a library for' is the first
@@ -196,9 +197,12 @@ confirming it tolerates a comfortable margin.
 
 ## M3: measured failover time and throughput
 
-Both measured over multiple independent runs and committed as raw output (`bench/results/*.json`),
-per the same "distribution, not a cherry-picked number" discipline used for ModelGate's admission
-latency benchmark.
+These measurement tests live in `bench/` and are deliberately excluded from normal `go test ./...`
+runs by the `bench` build tag. Run them explicitly with
+`go test -tags=bench ./bench -run TestMeasure -count=1`.
+
+Both measurements are committed as raw output (`bench/results/*.json`), per the same "distribution,
+not a cherry-picked number" discipline used for ModelGate's admission latency benchmark.
 
 **Failover time** (`bench/failover_test.go`): 10 independent trials, each a fresh 3-node cluster —
 kill the leader, time from that kill to the moment a write succeeds again on the majority side.

@@ -1,3 +1,5 @@
+//go:build bench
+
 // M3's throughput/latency measurement: "throughput/latency at cluster
 // sizes 3 and 5."
 package bench

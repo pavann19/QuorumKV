@@ -6,7 +6,9 @@ checker rather than just asserted to be consistent — see the sibling
 measured" discipline applied to a different domain.
 
 See [docs/DECISIONS.md](docs/DECISIONS.md) for design trade-offs and an honest status of what's
-verified so far.
+verified so far. See [docs/RAFT_BOUNDARY.md](docs/RAFT_BOUNDARY.md) for the exact split between
+HashiCorp Raft/Jille transport code and QuorumKV code, and [docs/DEMO.md](docs/DEMO.md) for a
+reproducible local demo.
 
 ## Status
 
@@ -57,7 +59,7 @@ because the cluster is statically bootstrapped).
   leader-kill test.
 - `test/fault` — M2's exit criterion: the fault-injection harness, 5 real scenarios, and the
   Porcupine linearizability model/check.
-- `bench` — M3's exit criterion: measured failover time and throughput/latency benchmarks.
+- `bench` — M3's exit criterion: opt-in measured failover time and sequential write-latency runs.
 
 ## Running tests
 
@@ -65,6 +67,15 @@ because the cluster is statically bootstrapped).
 go test ./...
 ```
 
-`test/cluster`, `test/fault`, and `bench` each spawn real multi-process clusters and take real wall
-time (tens of seconds to a couple of minutes); pass `-short` to skip them for a quick check of
-everything else.
+`test/cluster` and `test/fault` spawn real multi-process clusters and take real wall time; pass
+`-short` to skip the slower cluster/fault checks for a quick local pass.
+
+Benchmarks are intentionally separate from tests. They are behind the `bench` build tag and must be
+run explicitly:
+
+```bash
+go test -tags=bench ./bench -run TestMeasure -count=1
+```
+
+Those runs regenerate [bench/results/](bench/results/) and should be treated as recorded local
+measurements, not universal performance claims.

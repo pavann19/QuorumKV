@@ -1,3 +1,5 @@
+//go:build bench
+
 // M3's failover-time measurement: "time from leader kill to a new leader
 // accepting writes again," run multiple times and reported as a
 // distribution, not a single cherry-picked number -- the same discipline
