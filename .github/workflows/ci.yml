@@ -15,10 +15,9 @@ jobs:
           go-version: '1.24'
       - run: go build ./...
       - run: go vet ./...
-      # Fast, deterministic unit/integration tests. test/cluster, test/fault,
-      # and bench/ each spawn real multi-process clusters and take real wall
-      # time -- their own job below, so a quick push doesn't wait on them
-      # unnecessarily and a failure there is easy to spot separately.
+      # Fast, deterministic unit/integration tests. test/cluster and test/fault
+      # spawn real multi-process clusters and take real wall time; bench/ is
+      # build-tagged and runs only in its own measurement job below.
       - run: go test $(go list ./... | grep -vE '(test/cluster|test/fault|/bench)') -v -race -timeout 60s
 
   cluster-and-fault:
@@ -47,7 +46,7 @@ jobs:
         with:
           go-version: '1.24'
       - name: Measured failover time and throughput/latency (M3 exit criterion)
-        run: go test ./bench/... -v -timeout 300s
+        run: go test -tags=bench ./bench/... -v -timeout 300s
       - uses: actions/upload-artifact@v4
         with:
           name: bench-results
