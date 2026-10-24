@@ -74,12 +74,17 @@ func (f *FSM) Apply(log *raft.Log) any {
 	}
 	switch cmd.Op {
 	case opPut:
-		return f.Store.Put(cmd.Key, cmd.Value)
+		err = f.Store.Put(cmd.Key, cmd.Value)
 	case opDelete:
-		return f.Store.Delete(cmd.Key)
+		err = f.Store.Delete(cmd.Key)
 	default:
 		panic(fmt.Sprintf("raftnode: unknown command op %d in committed log entry", cmd.Op))
 	}
+	// Raft cannot reject a committed command. Continuing would diverge from peers.
+	if err != nil {
+		panic(fmt.Sprintf("raftnode: committed storage failure: %v", err))
+	}
+	return nil
 }
 
 // Snapshot and Restore exist to let Raft compact its log; this MVP-for-M1

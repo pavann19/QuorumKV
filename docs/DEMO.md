@@ -5,7 +5,7 @@ external dependencies beyond Go modules.
 
 ## Prerequisites
 
-- Go 1.22 or newer.
+- Go 1.27.3 or newer, matching `go.mod`.
 - A Windows, macOS, or Linux shell with free localhost ports in the ranges used
   by the tests.
 
@@ -20,6 +20,16 @@ go test ./...
 This includes unit tests, WAL crash recovery, the real 3-process cluster test,
 and the fault-injection/linearizability scenarios. It excludes the `bench`
 package because benchmark-style measurements are behind the `bench` build tag.
+
+For race checks, install a C compiler targeting the same architecture as Go:
+
+```bash
+go test -race ./internal/... -count=1
+```
+
+CI also sets `GOFLAGS=-race` for cluster and fault tests so their child node
+binaries are instrumented. Running `go test -race` alone does not instrument
+the separate binaries those tests build with `go build`.
 
 For a faster local smoke check:
 

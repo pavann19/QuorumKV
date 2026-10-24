@@ -49,20 +49,53 @@ type Record struct {
 // that as a fatal error.
 const headerLen = 4 + 4 // recordLen + CRC32
 
+// MaxRecordSize bounds allocations when reading untrusted on-disk lengths.
+const MaxRecordSize = 16 << 20
+
 // WAL is an append-only log file. All writes go through Append, which
 // fsyncs before returning -- the entire point of a WAL is that Append
 // returning nil is a durability promise a caller (e.g. a KV store's Put)
 // can rely on even across a hard crash immediately afterward.
 type WAL struct {
-	path string
-	f    *os.File
+	path   string
+	f      *os.File
+	failed error
 }
 
 // Open opens (creating if necessary) the WAL file at path for appending.
 func Open(path string) (*WAL, error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o644)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return nil, fmt.Errorf("wal: opening %s: %w", path, err)
+	}
+	// Remove an incomplete suffix before accepting any new acknowledged writes.
+	reader := bufio.NewReader(f)
+	var valid int64
+	for {
+		rec, ok, scanErr := readOneRecord(reader)
+		if scanErr != nil {
+			f.Close()
+			return nil, scanErr
+		}
+		if !ok {
+			break
+		}
+		valid += int64(headerLen + 9 + len(rec.Key) + len(rec.Value))
+	}
+	info, err := f.Stat()
+	if err == nil && info.Size() != valid {
+		err = f.Truncate(valid)
+		if err == nil {
+			err = f.Sync()
+		}
+	}
+	if err != nil {
+		f.Close()
+		return nil, fmt.Errorf("wal: repairing tail: %w", err)
+	}
+	if _, err := f.Seek(valid, io.SeekStart); err != nil {
+		f.Close()
+		return nil, err
 	}
 	return &WAL{path: path, f: f}, nil
 }
@@ -76,7 +109,18 @@ func (w *WAL) Close() error {
 // Append writes rec to the log and fsyncs before returning. A nil error is
 // a durability guarantee: rec will be present after Replay even if the
 // process is killed the instant Append returns.
-func (w *WAL) Append(rec Record) error {
+func (w *WAL) Append(rec Record) (err error) {
+	if w.failed != nil {
+		return fmt.Errorf("wal: unavailable after I/O failure: %w", w.failed)
+	}
+	if err := validateRecord(rec); err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			w.failed = err
+		}
+	}()
 	body := encodeBody(rec)
 	sum := crc32.ChecksumIEEE(body)
 
@@ -85,8 +129,10 @@ func (w *WAL) Append(rec Record) error {
 	binary.LittleEndian.PutUint32(buf[4:8], sum)
 	copy(buf[headerLen:], body)
 
-	if _, err := w.f.Write(buf); err != nil {
+	if n, err := w.f.Write(buf); err != nil {
 		return fmt.Errorf("wal: writing record: %w", err)
+	} else if n != len(buf) {
+		return io.ErrShortWrite
 	}
 	if err := w.f.Sync(); err != nil {
 		return fmt.Errorf("wal: fsync: %w", err)
@@ -102,7 +148,20 @@ func (w *WAL) Append(rec Record) error {
 // records behind, which Replay would then incorrectly resurrect on the
 // next restart (a record for a key the snapshot no longer has would still
 // replay as if it were current).
-func (w *WAL) Reset(records []Record) error {
+func (w *WAL) Reset(records []Record) (err error) {
+	if w.failed != nil {
+		return fmt.Errorf("wal: unavailable after I/O failure: %w", w.failed)
+	}
+	for _, rec := range records {
+		if err := validateRecord(rec); err != nil {
+			return err
+		}
+	}
+	defer func() {
+		if err != nil {
+			w.failed = err
+		}
+	}()
 	tmpPath := w.path + ".tmp"
 	tmp, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
 	if err != nil {
@@ -115,7 +174,10 @@ func (w *WAL) Reset(records []Record) error {
 		binary.LittleEndian.PutUint32(buf[0:4], uint32(len(body)))
 		binary.LittleEndian.PutUint32(buf[4:8], sum)
 		copy(buf[headerLen:], body)
-		if _, err := tmp.Write(buf); err != nil {
+		if n, err := tmp.Write(buf); err != nil || n != len(buf) {
+			if err == nil {
+				err = io.ErrShortWrite
+			}
 			tmp.Close()
 			os.Remove(tmpPath)
 			return fmt.Errorf("wal: writing record during reset: %w", err)
@@ -152,6 +214,16 @@ func encodeBody(rec Record) []byte {
 	buf = appendLenPrefixed(buf, rec.Key)
 	buf = appendLenPrefixed(buf, rec.Value)
 	return buf
+}
+
+func validateRecord(rec Record) error {
+	if rec.Op != OpPut && rec.Op != OpDelete {
+		return fmt.Errorf("wal: unknown operation %d", rec.Op)
+	}
+	if len(rec.Key) > MaxRecordSize-9 || len(rec.Value) > MaxRecordSize-9-len(rec.Key) {
+		return fmt.Errorf("wal: record exceeds %d bytes", MaxRecordSize)
+	}
+	return nil
 }
 
 func appendLenPrefixed(buf, data []byte) []byte {
@@ -204,15 +276,24 @@ func readOneRecord(r *bufio.Reader) (rec Record, ok bool, err error) {
 		return Record{}, false, nil // clean end of file
 	}
 	if err != nil {
-		return Record{}, false, nil // torn header: fewer than headerLen bytes remain
+		if err == io.EOF || err == io.ErrUnexpectedEOF {
+			return Record{}, false, nil
+		}
+		return Record{}, false, err
 	}
 
 	bodyLen := binary.LittleEndian.Uint32(header[0:4])
+	if bodyLen > MaxRecordSize {
+		return Record{}, false, fmt.Errorf("wal: record length %d exceeds limit", bodyLen)
+	}
 	wantSum := binary.LittleEndian.Uint32(header[4:8])
 
 	body := make([]byte, bodyLen)
 	if _, err := io.ReadFull(r, body); err != nil {
-		return Record{}, false, nil // torn body: declared length exceeds what's on disk
+		if err == io.EOF || err == io.ErrUnexpectedEOF {
+			return Record{}, false, nil
+		}
+		return Record{}, false, err
 	}
 
 	if crc32.ChecksumIEEE(body) != wantSum {
@@ -237,11 +318,18 @@ func decodeBody(body []byte) (Record, error) {
 	if err != nil {
 		return Record{}, err
 	}
-	value, _, err := readLenPrefixed(body, off)
+	value, end, err := readLenPrefixed(body, off)
 	if err != nil {
 		return Record{}, err
 	}
-	return Record{Op: op, Key: key, Value: value}, nil
+	if end != len(body) {
+		return Record{}, fmt.Errorf("trailing record data")
+	}
+	rec := Record{Op: op, Key: key, Value: value}
+	if err := validateRecord(rec); err != nil {
+		return Record{}, err
+	}
+	return rec, nil
 }
 
 func readLenPrefixed(body []byte, off int) (data []byte, newOff int, err error) {

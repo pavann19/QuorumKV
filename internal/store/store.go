@@ -5,6 +5,7 @@
 package store
 
 import (
+	"bytes"
 	"fmt"
 	"sync"
 
@@ -47,6 +48,8 @@ func Open(path string) (*Store, error) {
 
 // Close closes the underlying WAL file.
 func (s *Store) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.wal.Close()
 }
 
@@ -55,7 +58,7 @@ func (s *Store) Get(key []byte) (value []byte, found bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	v, ok := s.data[string(key)]
-	return v, ok
+	return bytes.Clone(v), ok
 }
 
 // Put durably writes key=value: the WAL append (and its fsync) completes
@@ -67,7 +70,7 @@ func (s *Store) Put(key, value []byte) error {
 	if err := s.wal.Append(wal.Record{Op: wal.OpPut, Key: key, Value: value}); err != nil {
 		return fmt.Errorf("store: put: %w", err)
 	}
-	s.data[string(key)] = value
+	s.data[string(key)] = bytes.Clone(value)
 	return nil
 }
 
@@ -100,7 +103,7 @@ func (s *Store) Dump() []Entry {
 	defer s.mu.RUnlock()
 	entries := make([]Entry, 0, len(s.data))
 	for k, v := range s.data {
-		entries = append(entries, Entry{Key: []byte(k), Value: v})
+		entries = append(entries, Entry{Key: []byte(k), Value: bytes.Clone(v)})
 	}
 	return entries
 }
@@ -118,7 +121,7 @@ func (s *Store) Restore(entries []Entry) error {
 	data := make(map[string][]byte, len(entries))
 	for i, e := range entries {
 		records[i] = wal.Record{Op: wal.OpPut, Key: e.Key, Value: e.Value}
-		data[string(e.Key)] = e.Value
+		data[string(e.Key)] = bytes.Clone(e.Value)
 	}
 	if err := s.wal.Reset(records); err != nil {
 		return fmt.Errorf("store: restore: %w", err)

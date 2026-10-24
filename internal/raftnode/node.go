@@ -104,8 +104,9 @@ func (n *Node) LeaderAddr() string {
 }
 
 // Apply submits cmd to the Raft log and waits for it to be committed and
-// applied (via FSM.Apply) on this node, or for timeout/an error. It must
-// only be called on the leader; a non-leader returns raft.ErrNotLeader.
+// applied (via FSM.Apply) on this node, or an error. The timeout bounds
+// enqueueing, not commitment. It must only be called on the leader;
+// a non-leader returns raft.ErrNotLeader.
 func (n *Node) apply(cmd command, timeout time.Duration) error {
 	data, err := encodeCommand(cmd)
 	if err != nil {
@@ -132,7 +133,7 @@ func (n *Node) Delete(key []byte, timeout time.Duration) error {
 }
 
 // Get reads directly from this node's local store -- a leader-only-read
-// policy is enforced by the caller (internal/raftnode.KVServer), not here;
+// barrier is enforced by the caller (internal/raftnode.KVServer), not here;
 // Get itself is just a local lookup regardless of leadership, since a
 // stale-follower-read mode (explicitly opt-in, per the build plan) may
 // want to call it on a follower too.
