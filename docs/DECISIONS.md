@@ -61,7 +61,9 @@ library that does exactly this one thing.
   `Get` (a direct local read).
 - `KVServer` — the gRPC service backing a Raft node: rejects writes (and, per the plan's "start
   simple" choice, reads too) on a non-leader with an error naming the current leader, so a client
-  knows where to retry.
+  knows where to retry. Reads now also commit a Raft barrier before accessing local state;
+  checking the local leader role alone cannot fence a partitioned leader. Committed-command
+  storage failures stop the process instead of returning an FSM result and continuing.
 - A real bug this surfaced and fixed, not a hypothetical: `Store.Restore` (used when Raft installs
   a snapshot) originally just *appended* the snapshot's entries to the existing WAL. That leaves
   stale pre-snapshot records in place — on the next restart, `Replay` would resurrect a key the

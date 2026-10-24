@@ -10,8 +10,7 @@ import (
 	pb "github.com/pavann19/quorumkv/proto/quorumkvpb"
 )
 
-// applyTimeout bounds how long a Put/Delete waits for Raft to commit and
-// apply it before giving up and returning an error to the client.
+// applyTimeout bounds Raft enqueue waits; it does not cancel committed writes.
 const applyTimeout = 5 * time.Second
 
 // KVServer implements pb.KVServer backed by a Raft-replicated Node,
@@ -27,14 +26,28 @@ func NewKVServer(n *Node) *KVServer {
 	return &KVServer{Node: n}
 }
 
-// Get reads from this node's local store. Per the build plan's "start
-// simple" option, this is leader-only: a follower rejects Get rather than
-// silently serving a potentially stale read, since stale-follower-reads
-// are explicitly meant to be a separate, opt-in mode (not yet built) per
-// the plan, not the default.
-func (s *KVServer) Get(_ context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
+// Get commits a Raft barrier before reading, fencing isolated leaders and
+// waiting until preceding committed writes have reached the local FSM.
+func (s *KVServer) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
 	if !s.Node.IsLeader() {
 		return nil, s.notLeaderError()
+	}
+	ctx, cancel := context.WithTimeout(ctx, applyTimeout)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return nil, status.FromContextError(err).Err()
+	}
+	deadline, _ := ctx.Deadline()
+	future := s.Node.Raft.Barrier(time.Until(deadline))
+	done := make(chan error, 1)
+	go func() { done <- future.Error() }()
+	select {
+	case <-ctx.Done():
+		return nil, status.FromContextError(ctx.Err()).Err()
+	case err := <-done:
+		if err != nil {
+			return nil, status.Errorf(codes.Unavailable, "read barrier failed: %v", err)
+		}
 	}
 	value, found := s.Node.Get(req.GetKey())
 	return &pb.GetResponse{Value: value, Found: found}, nil
