@@ -1,81 +1,96 @@
 # QuorumKV
 
-A Raft-replicated key-value store, checked against real client histories with a linearizability
-checker rather than just asserted to be consistent — see the sibling
-[ModelGate](https://github.com/pavann19/modelgate) project for the same "no number until it's
-measured" discipline applied to a different domain.
+A Go key-value store with Raft replication, a local write-ahead log, and a
+process-based fault-injection harness. The project focuses on recovery behavior,
+read consistency, and tests that expose failures across replica boundaries.
 
-See [docs/DECISIONS.md](docs/DECISIONS.md) for design trade-offs and an honest status of what's
-verified so far. See [docs/RAFT_BOUNDARY.md](docs/RAFT_BOUNDARY.md) for the exact split between
-HashiCorp Raft/Jille transport code and QuorumKV code, and [docs/DEMO.md](docs/DEMO.md) for a
-reproducible local demo.
+HashiCorp Raft provides consensus. The implementation here covers the WAL, store,
+FSM adapter, client-facing gRPC service, fault proxies, history recording, and
+test workloads. See the [ownership boundary](docs/RAFT_BOUNDARY.md) for the split
+between project code and dependencies.
 
-## Status
+## Verification
 
-**The entire build plan is complete: MVP through M3.**
+[CI passed on main](https://github.com/pavann19/QuorumKV/actions/runs/40066244588)
+for commit `9ca520e` on 2026-10-24. Build, vet, race checks, cluster/fault tests,
+vulnerability scanning, and the separate benchmark job passed. A fresh local
+clone also passed the documented correctness run. The
+[verification report](docs/CORRECTNESS_CHECKS.md) records the tested commits,
+environment, reproduced bugs, and limits of those checks.
 
-- **MVP** — the write-ahead log (`internal/wal`) and its crash-recovery proof: 100 trials of
-  starting a real subprocess, killing it abruptly at a random point, and verifying no committed
-  write disappears and no uncommitted write appears
-  ([test/crashrecovery/crash_test.go](test/crashrecovery/crash_test.go)). The single-node
-  `Get`/`Put`/`Delete` gRPC service (`internal/kv`, `internal/store`) is built on top of it.
-- **M1** — Raft-replicated log replication (`internal/raftnode`, adopting `hashicorp/raft` and
-  `Jille/raft-grpc-transport` rather than reimplementing either — see
-  [docs/DECISIONS.md](docs/DECISIONS.md)): a real 3-process cluster proving leader election, and a
-  real leader-kill test proving a new leader is elected and the cluster keeps accepting writes
-  ([test/cluster/cluster_test.go](test/cluster/cluster_test.go)).
-- **M2** — the fault-injection harness, "the actual point of the project" per the plan's own words:
-  a Toxiproxy-style per-edge proxy (`internal/faultproxy`) between every pair of nodes, and 5 real
-  fault scenarios (leader partition, minority partition, rolling restarts, network delay, double
-  leader attempt) each producing a committed history (18–40 operations) and a Porcupine linearizability
-  **PASS**, with the checker itself validated against hand-built histories it must reject
-  — [test/fault](test/fault), results committed at
-  [test/fault/results/](test/fault/results/).
-- **M3** — measured failover time (10 independent trials: p50 2.0s, p90 2.6s) and
-  sequential single-client `Put` latency at cluster sizes 3 and 5 (p50 4.3 ms vs. 6.6 ms; one run
-  each, and the 5-node figure varied noticeably between runs), committed as raw JSON,
-  not hand-typed — [bench](bench), results at [bench/results/](bench/results/).
+| Area | Implemented behavior | Evidence |
+| --- | --- | --- |
+| Local durability | CRC-framed WAL, fsync before acknowledgment, repaired tails on reopen | Unit tests and 100 subprocess kill/recovery trials |
+| Replication | Static cluster configuration, replicated Put/Delete, snapshot/restore adapter | Three-process election, replication, and leader-kill tests |
+| Reads | Commit and await a Raft barrier before reading local state | Healthy-read, cancellation, and isolated-leader regression tests |
+| Storage failures | Reject further WAL writes after I/O failure; stop a replica if a committed mutation cannot be applied | WAL and FSM regression tests |
+| Fault testing | Directed-edge partitions, rolling restarts, delayed traffic, and a double-leader attempt | Five scenarios checked with Porcupine; known-invalid histories test the checker |
 
-See [docs/DECISIONS.md](docs/DECISIONS.md) for every trade-off write-up, including the real bugs
-found along the way (a `Store.Restore` durability bug caught by M1's own work, and why the
-per-node-perspective Raft addressing trick that makes M2's fault injection possible is safe only
-because the cluster is statically bootstrapped).
+The crash test checks that acknowledged writes survive a process kill and allows
+one additional record whose fsync may finish before acknowledgment is observed.
+It does not test machine power loss. Passing fault scenarios means the recorded
+histories were accepted by the model, not that every possible execution has been
+proved linearizable.
 
-## Layout
+## Recorded Measurements
 
-- `internal/wal` — the write-ahead log: append-only, fsync'd, CRC-checked records.
-- `internal/store` — the in-memory KV store: every mutation goes through the WAL first.
-- `internal/kv` — the single-node gRPC service layer (`proto/kv.proto`), a thin translation over
-  `internal/store`. Used by `cmd/quorumkv`, the standalone (non-replicated) server.
-- `internal/raftnode` — the Raft-replicated node: an `FSM` applying committed entries to
-  `internal/store`, and a `Node`/`KVServer` bootstrapping `hashicorp/raft` over a gRPC transport.
-  Used by `cmd/quorumkv-node`, the replicated cluster server.
-- `internal/faultproxy` — the Toxiproxy-style per-edge TCP relay M2's fault injection is built on.
-- `cmd/quorumkv` — the single-node (MVP) server binary.
-- `cmd/quorumkv-node` — the Raft-replicated (M1+) cluster server binary.
-- `cmd/walwriter` — a test-only helper binary the crash-recovery test drives as a real subprocess.
-- `test/crashrecovery` — the MVP's exit criterion: 100 real kill-and-recover trials.
-- `test/cluster` — M1's exit criterion: a real 3-process cluster, leader election, and a real
-  leader-kill test.
-- `test/fault` — M2's exit criterion: the fault-injection harness, 5 real scenarios, and the
-  Porcupine linearizability model/check.
-- `bench` — M3's exit criterion: opt-in measured failover time and sequential write-latency runs.
+The JSON under [bench/results](bench/results/) records localhost runs from
+2026-09-18, before the October hardening changes:
 
-## Running tests
+| Workload | Samples | Recorded result |
+| --- | ---: | --- |
+| Three-node leader-kill failover | 10 | p50 2.106 s; p90 2.458 s |
+| Three-node sequential Put latency | 100 | p50 4.295 ms |
+| Five-node sequential Put latency | 100 | p50 6.586 ms |
+
+Write measurements use one client with one request in flight. The reported
+operations per second are inverse sequential latency, not a concurrent throughput
+limit. These files are historical local measurements; the successful hosted
+benchmark run has its own artifacts in CI. Neither is a production capacity claim.
+
+## Run Locally
+
+Use Go 1.27.3 or newer and free localhost ports for the test clusters.
 
 ```bash
-go test ./...
+go test ./... -count=1
 ```
 
-`test/cluster` and `test/fault` spawn real multi-process clusters and take real wall time; pass
-`-short` to skip the slower cluster/fault checks for a quick local pass.
+The suite starts real child processes for crash recovery, cluster tests, and fault
+scenarios. Use `-short` to skip those slower checks. The
+[demo guide](docs/DEMO.md) includes the fault-only run and race-check setup.
 
-Benchmarks are intentionally separate from tests. They are behind the `bench` build tag and must be
-run explicitly:
+Measurements are opt-in and excluded from ordinary tests:
 
 ```bash
 go test -tags=bench ./bench -run TestMeasure -count=1
 ```
 
-Those runs regenerate [bench/results/](bench/results/) and should be treated as recorded local
-measurements, not universal performance claims.
+## Scope and Limits
+
+This is a local demonstration and test project. The gRPC endpoints have no
+authentication or TLS; the command-line servers can bind to non-loopback addresses,
+so keep them on a trusted local machine. Cluster membership is static. Testing
+covers Windows locally and Linux in CI; macOS has not been verified.
+
+The project has not been operated in production. Arbitrary disk corruption,
+power-loss durability, large-scale load, and sustained multi-host operation are
+outside the verified scope. Read barriers add quorum traffic and log entries.
+Committed storage failures stop the affected process and require working storage
+before restart.
+
+Feature scope is frozen. Further changes should address a reproduced defect,
+a failing check, a dependency vulnerability, or a specific role requirement.
+
+## Code and Design
+
+- `internal/wal`, `internal/store`: local durability and state management.
+- `internal/kv`, `internal/raftnode`: standalone and replicated gRPC services.
+- `internal/faultproxy`, `test/fault`: directed-edge proxies, workloads, and history checking.
+- `test/cluster`, `test/crashrecovery`: process-level replication and recovery tests.
+- `bench`: separate failover and sequential write measurements.
+- `cmd`: standalone server, replicated server, and crash-test writer.
+
+[Design decisions](docs/DECISIONS.md) describe the implementation trade-offs.
+[Portfolio notes](docs/PORTFOLIO.md) summarize the work and the technical questions
+it supports in a backend or platform interview.
