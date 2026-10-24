@@ -49,7 +49,7 @@ Final fault histories accepted by the existing Porcupine model:
 
 These counts describe recorded workload histories, not an exhaustive proof of
 linearizability. Workloads and checker semantics were unchanged. Generated JSON
-was excluded from this patch; benchmarks were not rerun or remeasured.
+was excluded from this patch; benchmarks were not rerun locally during hardening.
 
 ## Clean Checkout Demo
 
@@ -62,9 +62,23 @@ The clone used the existing local Go module cache, so this verifies a clean
 source checkout rather than a machine with no previously downloaded modules.
 
 Generated fault JSON remained in the temporary clone and was not added to the
-release commits. The optional measurement run was not executed. The final diff
-review found no additional blockers in the scoped hardening patch. Hosted CI
-and cross-platform verification remain pending an authorized push.
+release commits. The optional local measurement run was not executed. The final
+diff review found no additional blockers in the scoped hardening patch.
+
+## Hosted CI
+
+[PR #1](https://github.com/pavann19/QuorumKV/pull/1) was merged into `main` at
+`9ca520ec0d4018d318e478b7d87cb595432f816b` on 2026-10-24. The
+[main CI run](https://github.com/pavann19/QuorumKV/actions/runs/40066244588)
+passed all four jobs on Linux:
+
+- `test`: build, vet, race-enabled tests, and subprocess race-report checks.
+- `cluster-and-fault`: real process clusters, fault histories, and race-report checks.
+- `vulnerabilities`: the pinned vulnerability scanner reported no vulnerabilities.
+- `bench`: failover and sequential write measurements, with results uploaded as artifacts.
+
+Hosted measurements are separate from the older committed JSON in `bench/results`.
+Windows local checks and Linux CI have passed; macOS remains unverified.
 
 ## Dependencies and Limits
 
@@ -75,7 +89,7 @@ and HTTP/2 dependencies were updated. The final scan passed at the date above.
 
 CI now reads the Go version from `go.mod`, instruments cluster subprocesses,
 checks their race reports, and runs a pinned vulnerability scanner. The workflow
-has been validated locally; a hosted GitHub run for these changes is pending.
+was validated locally and passed on the merged commit linked above.
 
 Reads now incur a quorum-committed log barrier. Storage failures intentionally
 stop a replicated node, reducing availability until working storage is restored.
