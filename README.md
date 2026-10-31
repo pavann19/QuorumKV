@@ -97,3 +97,5 @@ it supports in a backend or platform interview.
 
 
 Transport and recovery changes: [interfaces, compatibility and limits](docs/TRANSPORT_AND_RECOVERY.md).
+
+Bounded lab supervision: [checkpoint recovery and limits](docs/LAB_CHECKPOINTS.md).
