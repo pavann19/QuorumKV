@@ -5,6 +5,7 @@ fresh lab PKI and an owned child process. It accepts no existing cluster/data ta
 From a copied source checkout with Go from go.mod and Python 3.12:
 
 ```sh
+go test ./test/fault -run '^$' -timeout=20s
 python -B -m unittest discover -s diagnostics -v
 python -B scripts/run_lab.py --profile smoke --seconds 15 --transport mtls
 ```

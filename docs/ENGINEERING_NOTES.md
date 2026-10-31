@@ -1,4 +1,4 @@
-# QuorumKV: Backend and Platform Notes
+# QuorumKV engineering notes
 
 ## Project Summary
 
@@ -7,9 +7,7 @@ machine adapter. Added process-level crash tests, directed network partitions,
 and Porcupine history checks. Reproduced and fixed recovery and read-consistency
 bugs, then verified the changes locally and in Linux CI with race instrumentation.
 
-This project supports backend and platform work involving durable state, service
-failure handling, dependency maintenance, and reproducible testing. The consensus
-protocol and peer transport are adopted libraries; the
+The consensus protocol and peer transport are adopted libraries; the
 [ownership boundary](RAFT_BOUNDARY.md) lists their responsibilities.
 
 ## Technical Discussion
@@ -24,7 +22,7 @@ protocol and peer transport are adopted libraries; the
 | Checker coverage | Known-invalid histories verify that the Porcupine model rejects specific violations. Passing sampled workloads remains bounded evidence. |
 | Race testing | The harness builds its own server binaries. Inheriting `GOFLAGS=-race` instruments those children; CI also fails on their race reports. |
 
-## Evidence to Show
+## Verification references
 
 - [Main CI](https://github.com/pavann19/QuorumKV/actions/runs/40066244588): passing checks for merged commit `9ca520e`.
 - [Verification report](CORRECTNESS_CHECKS.md): reproduced failures, test commands, clean-clone result, and platform coverage.
@@ -33,12 +31,15 @@ protocol and peer transport are adopted libraries; the
 
 ## Boundaries
 
-Describe this as a tested local distributed-storage project. It has no client
-authentication, TLS, dynamic membership, or production operating history.
+This is a tested local distributed-storage project. Replicated nodes now support
+operator-configured mTLS and read/write method authorization; plaintext mode is
+restricted to literal loopback addresses. Trust-root rollover, revocation checks,
+dynamic membership and production operating history remain outside the implemented
+or verified scope. See [transport and recovery](TRANSPORT_AND_RECOVERY.md).
 Historical benchmark results measure sequential localhost workloads. The
 replication algorithm comes from HashiCorp Raft; the work here is storage
 integration, client behavior, failure testing, and verification.
 
-Keep the current scope for general backend and platform applications. Additional
-distributed-systems features should follow a concrete requirement from a target
-role or a reproduced failure in the existing implementation.
+The historical CI references above cover their named commits. Current candidate
+verification is local; it does not establish a new hosted CI pass, completed
+24-hour endurance run or multi-host availability.

@@ -68,10 +68,14 @@ go test -tags=bench ./bench -run TestMeasure -count=1
 
 ## Scope and Limits
 
-This is a local demonstration and test project. The gRPC endpoints have no
-authentication or TLS; the command-line servers can bind to non-loopback addresses,
-so keep them on a trusted local machine. Cluster membership is static. Testing
-covers Windows locally and Linux in CI; macOS has not been verified.
+This is a local demonstration and test project. Replicated nodes support
+operator-configured mTLS and method authorization. Without an identity file,
+plaintext mode is restricted to literal loopback addresses; remote plaintext
+deployments must provision identities before upgrading. Trust roots and client
+allowlists are fixed for a process lifetime. Cluster membership is static. See
+the transport guide below for compatibility and remaining identity limits.
+Historical CI coverage includes Linux; current candidate checks are local and
+hosted CI remains unverified. macOS has not been verified.
 
 The project has not been operated in production. Arbitrary disk corruption,
 power-loss durability, large-scale load, and sustained multi-host operation are
@@ -79,8 +83,12 @@ outside the verified scope. Read barriers add quorum traffic and log entries.
 Committed storage failures stop the affected process and require working storage
 before restart.
 
-Feature scope is frozen. Further changes should address a reproduced defect,
-a failing check, a dependency vulnerability, or a specific role requirement.
+The current candidate passed bounded local build, vet, functional and targeted
+race checks, plus 20 diagnostics/checkpoint tests after the documented fixed-fixture
+compilation step. The retained endurance attempt
+failed after about eight hours; checkpoint repair tests do not establish a
+completed 24-hour run. No repository license has been selected; no additional
+redistribution permission is asserted.
 
 ## Code and Design
 
@@ -92,8 +100,8 @@ a failing check, a dependency vulnerability, or a specific role requirement.
 - `cmd`: standalone server, replicated server, and crash-test writer.
 
 [Design decisions](docs/DECISIONS.md) describe the implementation trade-offs.
-[Portfolio notes](docs/PORTFOLIO.md) summarize the work and the technical questions
-it supports in a backend or platform interview.
+[Engineering notes](docs/ENGINEERING_NOTES.md) connect implementation choices
+to regression evidence and verification limits.
 
 
 Transport and recovery changes: [interfaces, compatibility and limits](docs/TRANSPORT_AND_RECOVERY.md).

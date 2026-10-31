@@ -70,6 +70,18 @@ bufconn server and temporary WAL, checks actual applied-write/lost-reply behavio
 and retains bounded raw checker evidence. Tool ID, test, command, cwd and target
 creation are deterministic. A job/model cannot supply a command or port.
 
+This optional tool requires Go from go.mod and a prepared module/build cache.
+Before timed worker execution, compile its fixed fixture explicitly:
+
+```sh
+go test ./test/fault -run '^$' -timeout=20s
+```
+
+Dependency resolution and cold compilation are setup work. They share the tool's
+30-second process budget if skipped; expiry yields needs_review, never a fabricated
+experiment result. The Go test itself retains its 20-second execution timeout.
+CI compiles the fixture before running worker regressions.
+
 Claims/heartbeats/results/retries use immediate SQLite transactions. A random
 lease token and owner fence every finish, with an expiry/deadline check. A global
 worker slot allows one active job. Expired work retries with bounded exponential
