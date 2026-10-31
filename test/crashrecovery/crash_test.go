@@ -43,7 +43,6 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	defer os.RemoveAll(dir)
 
 	walwriterPath = filepath.Join(dir, "walwriter.exe")
 	build := exec.Command("go", "build", "-o", walwriterPath, "../../cmd/walwriter")
@@ -52,13 +51,17 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	os.Exit(m.Run())
+	code := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(code)
 }
 
 // trialResult is what one kill-and-recover trial observed.
 type trialResult struct {
-	lastConfirmedOK int // highest "OK n" line successfully read before the kill; -1 if none
-	recovered       []wal.Record
+	confirmedBeforeKill int
+	recoveryDuration    time.Duration
+	lastConfirmedOK     int // highest "OK n" line successfully read before the kill; -1 if none
+	recovered           []wal.Record
 }
 
 func runOneTrial(t *testing.T, walPath string, killAfter time.Duration) trialResult {
@@ -72,10 +75,17 @@ func runOneTrial(t *testing.T, walPath string, killAfter time.Duration) trialRes
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("starting walwriter: %v", err)
 	}
+	t.Cleanup(func() {
+		if cmd.ProcessState == nil {
+			cmd.Process.Kill()
+			cmd.Wait()
+		}
+	})
 
 	var mu sync.Mutex
 	lastOK := -1
 	done := make(chan struct{})
+	ready := make(chan struct{})
 	go func() {
 		defer close(done)
 		scanner := bufio.NewScanner(stdout)
@@ -87,30 +97,44 @@ func runOneTrial(t *testing.T, walPath string, killAfter time.Duration) trialRes
 			}
 			mu.Lock()
 			lastOK = n
+			if n == 3 {
+				close(ready)
+			}
 			mu.Unlock()
 		}
 	}()
+	select {
+	case <-ready:
+	case <-done:
+		t.Fatal("writer exited before acknowledging four records")
+	case <-time.After(5 * time.Second):
+		t.Fatal("writer did not acknowledge four records")
+	}
 
 	time.Sleep(killAfter)
+	mu.Lock()
+	confirmedBeforeKill := lastOK
+	mu.Unlock()
 
 	// The abrupt kill this test needs -- see the package doc comment for
 	// why this is Windows' closest equivalent to SIGKILL.
 	if err := cmd.Process.Kill(); err != nil {
 		t.Fatalf("killing walwriter: %v", err)
 	}
-	_ = cmd.Wait() // expected to return a non-nil "killed" error; not the point of this test
-	<-done         // drain the scanner goroutine so lastOK is its final value
+	<-done // drain the scanner goroutine so lastOK is its final value
+	_ = cmd.Wait()
 
 	mu.Lock()
 	finalOK := lastOK
 	mu.Unlock()
 
+	start := time.Now()
 	records, err := wal.Replay(walPath)
 	if err != nil {
 		t.Fatalf("replaying WAL after kill: %v", err)
 	}
 
-	return trialResult{lastConfirmedOK: finalOK, recovered: records}
+	return trialResult{confirmedBeforeKill: confirmedBeforeKill, lastConfirmedOK: finalOK, recovered: records, recoveryDuration: time.Since(start)}
 }
 
 func parseOKLine(line string) (n int, ok bool) {
@@ -125,9 +149,8 @@ func parseOKLine(line string) (n int, ok bool) {
 	return n, true
 }
 
-// TestCrashRecovery_100Trials is the MVP exit criterion. Each trial: start
-// walwriter, let it run for a random short duration, kill it abruptly,
-// replay its WAL, and check two invariants:
+// Each trial waits for at least four acknowledged records, then kills the
+// writer after a seeded delay and verifies the acknowledged prefix on replay.
 //
 //  1. No committed write disappears: every "OK n" the helper printed before
 //     the kill must be present, in order, in the replayed WAL (records
@@ -153,6 +176,10 @@ func TestCrashRecovery_100Trials(t *testing.T) {
 		killAfter := time.Duration(rng.Intn(20)) * time.Millisecond
 
 		result := runOneTrial(t, walPath, killAfter)
+		if result.confirmedBeforeKill < 3 {
+			t.Fatalf("trial %d did not contain the required acknowledged prefix", trial)
+		}
+		t.Logf("trial=%d acknowledged_before_kill=%d acknowledged_after_drain=%d recovered=%d replay_us=%d", trial, result.confirmedBeforeKill+1, result.lastConfirmedOK+1, len(result.recovered), result.recoveryDuration.Microseconds())
 
 		if result.lastConfirmedOK < 0 {
 			// Nothing was confirmed durable before the kill (a very fast

@@ -4,3 +4,4 @@ coverage.out
 *.wal
 .idea/
 .vscode/
+**/results/v2/

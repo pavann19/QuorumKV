@@ -1,6 +1,7 @@
 package raftnode
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"github.com/hashicorp/raft"
 	raftboltdb "github.com/hashicorp/raft-boltdb/v2"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/pavann19/quorumkv/internal/store"
@@ -32,6 +34,7 @@ type Node struct {
 	Raft      *raft.Raft
 	Store     *store.Store
 	transport *transport.Manager
+	logStore  *raftboltdb.BoltStore
 }
 
 // New bootstraps a Raft node: opens (or replays) its local store, opens
@@ -41,6 +44,22 @@ type Node struct {
 // restart). It does not start serving gRPC -- call Register on the
 // returned Node's transport via RegisterOn before starting the server.
 func New(self Peer, peers []Peer, dataDir string) (*Node, error) {
+	return newNode(self, peers, dataDir, nil)
+}
+
+// NewAuthenticated uses the same deterministic storage/FSM with an authenticated transport.
+func NewAuthenticated(self Peer, peers []Peer, dataDir string, creds credentials.TransportCredentials) (*Node, error) {
+	if creds == nil {
+		return nil, errors.New("transport credentials required")
+	}
+	return newNodeTransport(self, peers, dataDir, nil, creds)
+}
+
+func newNode(self Peer, peers []Peer, dataDir string, cfg *raft.Config) (_ *Node, resultErr error) {
+	return newNodeTransport(self, peers, dataDir, cfg, insecure.NewCredentials())
+}
+
+func newNodeTransport(self Peer, peers []Peer, dataDir string, cfg *raft.Config, creds credentials.TransportCredentials) (_ *Node, resultErr error) {
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return nil, fmt.Errorf("raftnode: creating data dir: %w", err)
 	}
@@ -49,22 +68,39 @@ func New(self Peer, peers []Peer, dataDir string) (*Node, error) {
 	if err != nil {
 		return nil, fmt.Errorf("raftnode: opening store: %w", err)
 	}
+	defer func() {
+		if resultErr != nil {
+			st.Close()
+		}
+	}()
 
 	logStore, err := raftboltdb.NewBoltStore(filepath.Join(dataDir, "raft-log.bolt"))
 	if err != nil {
 		return nil, fmt.Errorf("raftnode: opening raft log store: %w", err)
 	}
+	defer func() {
+		if resultErr != nil {
+			logStore.Close()
+		}
+	}()
 
 	snapshotStore, err := raft.NewFileSnapshotStore(dataDir, 2, os.Stderr)
 	if err != nil {
 		return nil, fmt.Errorf("raftnode: opening snapshot store: %w", err)
 	}
 
-	// No TLS at this milestone -- see docs/DECISIONS.md ("Raft transport has
-	// no TLS yet").
-	tm := transport.New(raft.ServerAddress(self.Addr), []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())})
+	tm := transport.New(raft.ServerAddress(self.Addr), []grpc.DialOption{grpc.WithTransportCredentials(creds), grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(4<<20), grpc.MaxCallSendMsgSize(4<<20))})
+	defer func() {
+		if resultErr != nil {
+			tm.Close()
+		}
+	}()
 
-	cfg := raft.DefaultConfig()
+	if cfg == nil {
+		cfg = raft.DefaultConfig()
+	}
+	// Bound append batches below the transport message ceiling even with 1 MiB values.
+	cfg.MaxAppendEntries = 1
 	cfg.LocalID = raft.ServerID(self.ID)
 
 	fsm := &FSM{Store: st}
@@ -79,9 +115,12 @@ func New(self Peer, peers []Peer, dataDir string) (*Node, error) {
 	}
 	// Idempotent: only takes effect if this node's log is empty. Safe to
 	// call on every startup, including after a restart with existing state.
-	r.BootstrapCluster(raft.Configuration{Servers: servers})
+	if err := r.BootstrapCluster(raft.Configuration{Servers: servers}).Error(); err != nil && !errors.Is(err, raft.ErrCantBootstrap) {
+		r.Shutdown().Error()
+		return nil, fmt.Errorf("raftnode: bootstrap: %w", err)
+	}
 
-	return &Node{Raft: r, Store: st, transport: tm}, nil
+	return &Node{Raft: r, Store: st, transport: tm, logStore: logStore}, nil
 }
 
 // RegisterOn attaches the Raft gRPC transport's service handlers to s. The
@@ -143,8 +182,13 @@ func (n *Node) Get(key []byte) ([]byte, bool) {
 
 // Shutdown stops the Raft instance and closes the local store.
 func (n *Node) Shutdown() error {
-	if err := n.Raft.Shutdown().Error(); err != nil {
-		return fmt.Errorf("raftnode: shutting down raft: %w", err)
+	err := n.Raft.Shutdown().Error()
+	if n.transport != nil {
+		err = errors.Join(err, n.transport.Close())
 	}
-	return n.Store.Close()
+	err = errors.Join(err, n.Store.Close())
+	if n.logStore != nil {
+		err = errors.Join(err, n.logStore.Close())
+	}
+	return err
 }

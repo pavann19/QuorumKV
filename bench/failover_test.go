@@ -121,12 +121,13 @@ func percentile(sorted []float64, p float64) float64 {
 }
 
 func writeResult(name string, v any) error {
-	if err := os.MkdirAll("results", 0o755); err != nil {
+	dir := fault.ResultsDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join("results", name), data, 0o644)
+	return os.WriteFile(filepath.Join(dir, name), data, 0o644)
 }

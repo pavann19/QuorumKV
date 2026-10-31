@@ -29,17 +29,24 @@ type DirectedEdge struct {
 	ListenAddr string
 	TargetAddr string
 
-	mu      sync.Mutex
-	cut     bool
-	delay   time.Duration
-	conns   map[net.Conn]struct{}
-	lis     net.Listener
-	closeCh chan struct{}
+	mu         sync.Mutex
+	cut        bool
+	closed     bool
+	generation uint64
+	dial       func(string, string) (net.Conn, error)
+	delay      time.Duration
+	conns      map[net.Conn]struct{}
+	lis        net.Listener
+	closeCh    chan struct{}
 }
 
 // NewDirectedEdge starts listening on listenAddr and relaying accepted
 // connections to targetAddr. Call Close when done.
 func NewDirectedEdge(listenAddr, targetAddr string) (*DirectedEdge, error) {
+	return newDirectedEdge(listenAddr, targetAddr, func(network, addr string) (net.Conn, error) { return net.DialTimeout(network, addr, time.Second) })
+}
+
+func newDirectedEdge(listenAddr, targetAddr string, dial func(string, string) (net.Conn, error)) (*DirectedEdge, error) {
 	lis, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		return nil, err
@@ -50,6 +57,7 @@ func NewDirectedEdge(listenAddr, targetAddr string) (*DirectedEdge, error) {
 		conns:      make(map[net.Conn]struct{}),
 		lis:        lis,
 		closeCh:    make(chan struct{}),
+		dial:       dial,
 	}
 	go e.acceptLoop()
 	return e, nil
@@ -62,24 +70,31 @@ func (e *DirectedEdge) acceptLoop() {
 			return // listener closed
 		}
 		e.mu.Lock()
-		cut := e.cut
+		cut := e.cut || e.closed
+		generation := e.generation
 		e.mu.Unlock()
 		if cut {
 			conn.Close() // reject immediately: simulates a link that's down
 			continue
 		}
-		go e.relay(conn)
+		go e.relay(conn, generation)
 	}
 }
 
-func (e *DirectedEdge) relay(client net.Conn) {
-	backend, err := net.Dial("tcp", e.TargetAddr)
+func (e *DirectedEdge) relay(client net.Conn, generation uint64) {
+	backend, err := e.dial("tcp", e.TargetAddr)
 	if err != nil {
 		client.Close()
 		return
 	}
 
 	e.mu.Lock()
+	if e.cut || e.closed || generation != e.generation {
+		e.mu.Unlock()
+		client.Close()
+		backend.Close()
+		return
+	}
 	e.conns[client] = struct{}{}
 	e.conns[backend] = struct{}{}
 	e.mu.Unlock()
@@ -94,8 +109,14 @@ func (e *DirectedEdge) relay(client net.Conn) {
 
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go func() { defer wg.Done(); e.pump(backend, client) }()
-	go func() { defer wg.Done(); e.pump(client, backend) }()
+	pump := func(dst, src net.Conn) {
+		defer wg.Done()
+		defer client.Close()
+		defer backend.Close()
+		e.pump(dst, src)
+	}
+	go pump(backend, client)
+	go pump(client, backend)
 	wg.Wait()
 }
 
@@ -128,6 +149,7 @@ func (e *DirectedEdge) pump(dst io.Writer, src io.Reader) {
 func (e *DirectedEdge) Cut() {
 	e.mu.Lock()
 	e.cut = true
+	e.generation++
 	conns := make([]net.Conn, 0, len(e.conns))
 	for c := range e.conns {
 		conns = append(conns, c)
@@ -155,13 +177,15 @@ func (e *DirectedEdge) SetDelay(d time.Duration) {
 
 // Close stops the listener and all active relayed connections.
 func (e *DirectedEdge) Close() error {
-	err := e.lis.Close()
 	e.mu.Lock()
+	e.closed = true
+	e.generation++
 	conns := make([]net.Conn, 0, len(e.conns))
 	for c := range e.conns {
 		conns = append(conns, c)
 	}
 	e.mu.Unlock()
+	err := e.lis.Close()
 	for _, c := range conns {
 		c.Close()
 	}

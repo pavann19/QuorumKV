@@ -94,3 +94,6 @@ a failing check, a dependency vulnerability, or a specific role requirement.
 [Design decisions](docs/DECISIONS.md) describe the implementation trade-offs.
 [Portfolio notes](docs/PORTFOLIO.md) summarize the work and the technical questions
 it supports in a backend or platform interview.
+
+
+Transport and recovery changes: [interfaces, compatibility and limits](docs/TRANSPORT_AND_RECOVERY.md).

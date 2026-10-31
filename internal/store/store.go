@@ -20,6 +20,8 @@ type Store struct {
 	data map[string][]byte
 }
 
+func (s *Store) WALStats() wal.Stats { return s.wal.Stats() }
+
 // Open opens (creating if necessary) the WAL at path, replays it to
 // rebuild in-memory state, and returns a Store ready to serve requests.
 func Open(path string) (*Store, error) {

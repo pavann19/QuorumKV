@@ -2,6 +2,7 @@ package fault
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -15,28 +16,38 @@ import (
 // "if any scenario produces a FAIL, that's not a failure of the project --
 // that's the most valuable finding in it. Document it honestly." Writing
 // the file happens before the t.Fatal, so a real failure is never lost.
-func CheckAndCommit(t *testing.T, name string, history []Op) {
+func CheckAndCommit(t *testing.T, name string, history []Op, events ...FaultEvent) {
 	t.Helper()
+	if err := WriteHistory(name, history, false, events...); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateHistory(history); err != nil {
+		t.Fatalf("%s: invalid attempt history: %v", name, err)
+	}
+	if err := validateWorkloadCoverage(history); err != nil {
+		t.Fatalf("%s: ineffective workload: %v", name, err)
+	}
 
-	definite, pendingPuts, droppedGets := 0, 0, 0
+	definite, uncertain, rejected, failedReads := 0, 0, 0, 0
 	for _, o := range history {
 		switch {
 		case o.Err == "":
 			definite++
-		case o.Kind == "put":
-			pendingPuts++
+		case (o.Kind == "put" || o.Kind == "delete") && o.Outcome == "uncertain":
+			uncertain++
+		case o.Outcome == "rejected":
+			rejected++
 		default:
-			droppedGets++
+			failedReads++
 		}
 	}
-	t.Logf("%s: %d operations recorded: %d completed, %d errored Puts checked as may-have-happened, %d errored Gets dropped (no effect on state)",
-		name, len(history), definite, pendingPuts, droppedGets)
+	t.Logf("%s: attempts=%d acknowledged=%d uncertain_mutations=%d rejected=%d failed_reads=%d", name, len(history), definite, uncertain, rejected, failedReads)
 
 	ops := toOperations(history)
 	result, info := porcupine.CheckOperationsVerbose(kvModel, ops, 30*time.Second)
 	linearizable := result == porcupine.Ok
 
-	if err := WriteHistory(name, history, linearizable); err != nil {
+	if err := WriteHistory(name, history, linearizable, events...); err != nil {
 		t.Fatalf("%s: writing history file: %v", name, err)
 	}
 
@@ -47,14 +58,14 @@ func CheckAndCommit(t *testing.T, name string, history []Op) {
 		} else {
 			t.Logf("%s: linearizability FAILED (result=%s), and writing visualization also failed: %v", name, result, visErr)
 		}
-		t.Fatalf("%s: history is not linearizable (Porcupine result: %s) -- see test/fault/results/%s.json", name, result, name)
+		t.Fatalf("%s: observed history rejected (Porcupine result: %s) -- see %s", name, result, filepath.Join(ResultsDir(), name+".json"))
 	}
 
-	t.Logf("%s: PASS -- history is linearizable (%d ops checked)", name, len(ops))
+	t.Logf("%s: PASS -- observed history accepted (%d attempts modeled)", name, len(ops))
 }
 
 func writeVisualization(name string, info porcupine.LinearizationInfo) (string, error) {
-	path := "results/" + name + ".html"
+	path := filepath.Join(ResultsDir(), name+".html")
 	f, err := os.Create(path)
 	if err != nil {
 		return "", err
