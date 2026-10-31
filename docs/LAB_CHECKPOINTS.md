@@ -2,7 +2,7 @@
 
 The portable supervisor uses only new local synthetic stores, loopback addresses,
 fresh lab PKI and an owned child process. It accepts no existing cluster/data target.
-From a copied source checkout with Go from go.mod and Python 3.12:
+From a copied source checkout with Go from go.mod and Python 3.12 or newer:
 
 ```sh
 go test ./test/fault -run '^$' -timeout=20s
