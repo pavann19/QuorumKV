@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, 'codex/publication-20261031']
+    branches: [main, 'publication/20261031']
   pull_request:
 
 permissions:
