@@ -6,8 +6,8 @@ external dependencies beyond Go modules.
 ## Prerequisites
 
 - Go 1.27.3 or newer, matching `go.mod`.
-- A Windows, macOS, or Linux shell with free localhost ports in the ranges used
-  by the tests.
+- A Windows or Linux shell with free localhost ports in the ranges used by the tests.
+  macOS execution is not verified by the recorded CI evidence.
 
 ## Quick Correctness Run
 
@@ -50,8 +50,10 @@ Expected shape:
 - Five scenarios run: leader partition, minority partition, rolling restarts,
   network delay, and double leader attempt.
 - Each scenario records a client history.
-- Porcupine reports the committed histories as linearizable.
-- JSON artifacts are written under `test/fault/results/`.
+- Porcupine checks the recorded operation/attempt history, including uncertain outcomes,
+  against the supplied model. Finite accepted histories are not a universal proof.
+- Versioned fault artifacts are written under `test/fault/results/v2/` by default.
+  Set `QUORUMKV_RESULTS_DIR` to a separate evidence directory to preserve existing runs.
 
 ## Measurement Run
 
@@ -61,7 +63,7 @@ Benchmarks are separate from tests and must be requested explicitly:
 go test -tags=bench ./bench -run TestMeasure -count=1
 ```
 
-This writes raw JSON under `bench/results/`:
+This writes raw JSON under `bench/results/v2/`:
 
 - `failover_time.json`: 10 leader-kill failover trials.
 - `throughput_3nodes.json`: 100 sequential single-client `Put`s on 3 nodes.

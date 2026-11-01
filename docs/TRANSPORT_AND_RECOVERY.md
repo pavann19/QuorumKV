@@ -1,5 +1,9 @@
 # Authenticated transport and observed recovery
 
+## Checkpoint repair status
+
+The reviewed candidate repairs Windows checkpoint publication when readers hold files open and includes regression checks. The earlier WinError 5 soak remains a failed historical result; there is no replacement 24-hour PASS. See [verification status](VERIFICATION.md) for the repaired source revision and hosted runs. Preserve old checkpoint evidence when performing a separately authorized rerun.
+
 HashiCorp Raft and Jille's gRPC transport provide consensus/transport machinery.
 This project supplies its KV FSM, WAL/store, identity policy, observation harness
 and recovery controls. An accepted observed history is not a proof of all executions.

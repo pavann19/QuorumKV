@@ -32,8 +32,11 @@ Raft protocol from scratch.
 - Dialing/framing behavior for RequestVote, AppendEntries, and InstallSnapshot
   traffic between Raft nodes.
 
-QuorumKV configures this transport with plaintext localhost gRPC for the current
-demo/test scope. TLS and multi-host trust policy are intentionally not built yet.
+QuorumKV supports optional mutual TLS with operator-owned roots, certificate identities
+and peer allowlists. Plaintext mode is restricted to literal loopback addresses; legacy
+local fault scenarios use that mode. Separate mTLS tests exercise authenticated process
+traffic, so do not describe every proxy-fault scenario as TLS-tested. See
+[transport and recovery](TRANSPORT_AND_RECOVERY.md) for the current identity boundary.
 
 ## Written in QuorumKV
 

@@ -1,5 +1,7 @@
 # QuorumKV
 
+[Documentation index](docs/README.md) | [Verified baseline and remaining limits](docs/VERIFICATION.md)
+
 A Go key-value store with Raft replication, a local write-ahead log, and a
 process-based fault-injection harness. The project focuses on recovery behavior,
 read consistency, and tests that expose failures across replica boundaries.
@@ -118,3 +120,7 @@ Bounded lab supervision: [checkpoint recovery and limits](docs/LAB_CHECKPOINTS.m
 
 Original project code is licensed under [Apache-2.0](LICENSE). Dependency licenses,
 including the adopted Raft components, are retained in [third-party notices](THIRD_PARTY_NOTICES.txt).
+
+## Contributing and maintenance
+
+See [contributing](CONTRIBUTING.md), [maintenance rules](MAINTAINING.md) and [security reporting](SECURITY.md). Changes reach `main` through reviewed PRs and required checks.
