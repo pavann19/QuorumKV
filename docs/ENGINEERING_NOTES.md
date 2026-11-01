@@ -40,6 +40,7 @@ Historical benchmark results measure sequential localhost workloads. The
 replication algorithm comes from HashiCorp Raft; the work here is storage
 integration, client behavior, failure testing, and verification.
 
-The historical CI references above cover their named commits. Current candidate
-verification is local; it does not establish a new hosted CI pass, completed
-24-hour endurance run or multi-host availability.
+The historical CI references above cover their named commits. Runtime revision
+0d13601 subsequently passed [hosted CI](https://github.com/pavann19/QuorumKV/actions/runs/41203948838)
+and [Linux/Windows diagnostics](https://github.com/pavann19/QuorumKV/actions/runs/41203948781).
+Those bounded checks do not establish a completed 24-hour run or multi-host availability.

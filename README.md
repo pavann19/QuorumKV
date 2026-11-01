@@ -11,6 +11,12 @@ between project code and dependencies.
 
 ## Verification
 
+The [hosted CI](https://github.com/pavann19/QuorumKV/actions/runs/41203948838)
+and [Linux/Windows diagnostics](https://github.com/pavann19/QuorumKV/actions/runs/41203948781)
+passed for runtime revision `0d13601` on 1 November 2026. These cover build, vet,
+race-instrumented child processes, cluster/fault scenarios, separate measurements
+and checkpoint recovery regressions. Each later PR must pass its own checks.
+
 [CI passed on main](https://github.com/pavann19/QuorumKV/actions/runs/40066244588)
 for commit `9ca520e` on 2026-10-24. Build, vet, race checks, cluster/fault tests,
 vulnerability scanning, and the separate benchmark job passed. A fresh local
@@ -74,8 +80,8 @@ plaintext mode is restricted to literal loopback addresses; remote plaintext
 deployments must provision identities before upgrading. Trust roots and client
 allowlists are fixed for a process lifetime. Cluster membership is static. See
 the transport guide below for compatibility and remaining identity limits.
-Historical CI coverage includes Linux; current candidate checks are local and
-hosted CI remains unverified. macOS has not been verified.
+Current hosted coverage includes Linux and Windows diagnostics; macOS has not
+been verified. Process recovery and checkpoint tests do not prove host resilience.
 
 The project has not been operated in production. Arbitrary disk corruption,
 power-loss durability, large-scale load, and sustained multi-host operation are
@@ -87,8 +93,8 @@ The current candidate passed bounded local build, vet, functional and targeted
 race checks, plus 20 diagnostics/checkpoint tests after the documented fixed-fixture
 compilation step. The retained endurance attempt
 failed after about eight hours; checkpoint repair tests do not establish a
-completed 24-hour run. No repository license has been selected; no additional
-redistribution permission is asserted.
+completed 24-hour run. The checkpoint publication defect is repaired with unique
+temporary files and bounded sharing retries; its original failed run remains failed.
 
 ## Code and Design
 
@@ -107,3 +113,8 @@ to regression evidence and verification limits.
 Transport and recovery changes: [interfaces, compatibility and limits](docs/TRANSPORT_AND_RECOVERY.md).
 
 Bounded lab supervision: [checkpoint recovery and limits](docs/LAB_CHECKPOINTS.md).
+
+## License
+
+Original project code is licensed under [Apache-2.0](LICENSE). Dependency licenses,
+including the adopted Raft components, are retained in [third-party notices](THIRD_PARTY_NOTICES.txt).

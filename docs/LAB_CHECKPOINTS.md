@@ -41,4 +41,6 @@ unproven. These tests do not establish supervisor readiness over 24 hours.
 Worker offline analysis remains separate from consensus and cannot authorize
 experiments on existing clusters. Model proposals cannot change membership, trust,
 acknowledgement histories or acceptance labels. CI checks Python and fixed isolated
-Go experiments on Linux and Windows; a proposed workflow is not hosted CI evidence.
+Go experiments on Linux and Windows. The [hosted diagnostics run](https://github.com/pavann19/QuorumKV/actions/runs/41203948781)
+passed for runtime revision 0d13601; later PRs require their own checks. This
+verifies the bounded repair cases, not completion of the original endurance gate.
