@@ -1,0 +1,26 @@
+name: Bug report
+description: Reproducible behavior that differs from the documented contract
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: "For vulnerabilities, use the Security tab's private reporting option. Do not include credentials, personal data or real financial records."
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction and expected behavior
+      description: Provide minimal synthetic steps, expected output and actual output.
+    validations:
+      required: true
+  - type: input
+    id: revision
+    attributes:
+      label: Source revision and environment
+      placeholder: Commit SHA, OS, toolchain and deployment mode
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence
+      description: Relevant error, test result or CI link; preserve the distinction between an uncertain outcome and a confirmed failure.

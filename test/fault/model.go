@@ -8,12 +8,11 @@ import (
 
 // kvInput/kvOutput/kvState define the sequential specification Porcupine
 // checks the recorded history against: a simple last-write-wins register
-// per key. Put always succeeds (an errored Put is excluded from the
-// history entirely -- see toOperations); Get must return whatever the
+// per key. Uncertain mutations remain pending; Get must return whatever the
 // most recent linearized Put wrote, or not-found if there hasn't been one.
 type kvInput struct {
 	Key   string
-	Kind  string // "put" or "get"
+	Kind  string // "put", "delete", or "get"
 	Value string
 }
 
@@ -56,6 +55,12 @@ var kvModel = porcupine.Model{
 		if in.Kind == "put" {
 			return true, kvState{Exists: true, Value: in.Value}
 		}
+		if in.Kind == "delete" {
+			return true, kvState{}
+		}
+		if in.Kind != "get" {
+			return false, st
+		}
 		// "get"
 		ok := out.Found == st.Exists && (!st.Exists || out.Value == st.Value)
 		return ok, st
@@ -66,6 +71,9 @@ var kvModel = porcupine.Model{
 		if in.Kind == "put" {
 			return "Put(" + in.Key + ", " + in.Value + ")"
 		}
+		if in.Kind == "delete" {
+			return "Delete(" + in.Key + ")"
+		}
 		if out.Found {
 			return "Get(" + in.Key + ") -> " + out.Value
 		}
@@ -75,7 +83,7 @@ var kvModel = porcupine.Model{
 
 // toOperations converts recorded Ops into Porcupine's Operation type.
 //
-// A Put that errored after all retries has an unknown outcome: it may have
+// A mutation attempt that errored has an unknown outcome: it may have
 // committed (e.g. the leader applied it and died before replying) or not.
 // Dropping it, as an earlier version of this file did, can hide a real
 // violation: a later Get that returns that Put's value would then look like
@@ -87,13 +95,13 @@ var kvModel = porcupine.Model{
 // indistinguishable from "it never happened". That is the standard
 // treatment of indeterminate operations (Jepsen's :info operations).
 //
-// An errored Get has no effect on state whichever way it went, so it is
-// the one kind of operation that is still safe to drop.
+// Rejections known to occur before submission do not mutate state. Failed reads
+// also have no state effect; both remain in JSON but are omitted from the model.
 func toOperations(history []Op) []porcupine.Operation {
 	ops := make([]porcupine.Operation, 0, len(history))
 	for _, o := range history {
 		if o.Err != "" {
-			if o.Kind != "put" {
+			if o.Kind == "get" || o.Outcome == "rejected" {
 				continue
 			}
 			ops = append(ops, porcupine.Operation{

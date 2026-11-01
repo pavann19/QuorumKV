@@ -16,10 +16,15 @@ import (
 
 func main() {
 	var (
-		addr    = flag.String("addr", ":7070", "gRPC listen address")
+		addr    = flag.String("addr", "127.0.0.1:7070", "loopback-only legacy single-node lab address")
 		walPath = flag.String("wal", "quorumkv.wal", "path to the WAL file")
 	)
 	flag.Parse()
+	host, _, err := net.SplitHostPort(*addr)
+	ip := net.ParseIP(host)
+	if err != nil || ip == nil || !ip.IsLoopback() {
+		exitf("legacy lab server requires literal loopback address; use quorumkv-node with mTLS for network service")
+	}
 
 	s, err := store.Open(*walPath)
 	if err != nil {

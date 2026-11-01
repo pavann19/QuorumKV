@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
-
-	pb "github.com/pavann19/quorumkv/proto/quorumkvpb"
 )
 
 func keys(n int) []string {
@@ -24,7 +22,7 @@ func keys(n int) []string {
 // TestScenario_LeaderPartition fully isolates the current leader from
 // both other nodes. The majority side must elect a new leader and keep
 // serving; the whole recorded history (routed through whichever nodes are
-// actually reachable, via retryingCall) must still be linearizable.
+// actually reachable) is checked using every observed RPC attempt.
 func TestScenario_LeaderPartition(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping fault-injection scenario in -short mode")
@@ -32,8 +30,10 @@ func TestScenario_LeaderPartition(t *testing.T) {
 	c := Start(t, 3, 18101)
 	leader := c.FindLeader(t, c.AllIDs(), 20*time.Second)
 	t.Logf("initial leader: %s", leader)
+	recorder := NewRecorder()
 
 	c.Partition(leader)
+	recorder.Mark("partition", leader)
 	t.Cleanup(func() { c.Heal(leader) })
 
 	majority := make([]string, 0, 2)
@@ -45,8 +45,8 @@ func TestScenario_LeaderPartition(t *testing.T) {
 	newLeader := c.FindLeader(t, majority, 20*time.Second)
 	t.Logf("new leader on majority side: %s", newLeader)
 
-	history := RunWorkload(c, majority, 4, 10, keys(4), 15*time.Second)
-	CheckAndCommit(t, "leader_partition", history)
+	history := RunWorkloadWithRecorder(recorder, c, majority, 4, 10, keys(4), 15*time.Second)
+	CheckAndCommit(t, "leader_partition", history, recorder.Events()...)
 }
 
 // TestScenario_MinorityPartition isolates a single follower (never the
@@ -75,10 +75,12 @@ func TestScenario_MinorityPartition(t *testing.T) {
 	t.Logf("leader=%s isolating minority follower=%s majority=%v", leader, isolated, majority)
 
 	c.Partition(isolated)
+	recorder := NewRecorder()
+	recorder.Mark("partition", isolated)
 	t.Cleanup(func() { c.Heal(isolated) })
 
-	history := RunWorkload(c, majority, 4, 10, keys(4), 15*time.Second)
-	CheckAndCommit(t, "minority_partition", history)
+	history := RunWorkloadWithRecorder(recorder, c, majority, 4, 10, keys(4), 15*time.Second)
+	CheckAndCommit(t, "minority_partition", history, recorder.Events()...)
 }
 
 // TestScenario_RollingRestarts kills and restarts each node in turn (never
@@ -90,10 +92,21 @@ func TestScenario_RollingRestarts(t *testing.T) {
 	}
 	c := Start(t, 3, 18121)
 	c.FindLeader(t, c.AllIDs(), 20*time.Second)
+	recorder := NewRecorder()
+	gates := []chan struct{}{make(chan struct{}), make(chan struct{}), make(chan struct{})}
+	completed := make(chan struct{}, 12)
+	recorder.beforeOperation = func(_ int, index int) {
+		if index%2 == 0 && index > 0 && index <= 6 {
+			completed <- struct{}{}
+		}
+		if index%2 == 0 && index < 6 {
+			<-gates[index/2]
+		}
+	}
 
 	done := make(chan []Op, 1)
 	go func() {
-		done <- RunWorkload(c, c.AllIDs(), 4, 8, keys(4), 25*time.Second)
+		done <- RunWorkloadWithRecorder(recorder, c, c.AllIDs(), 4, 8, keys(4), 25*time.Second)
 	}()
 
 	// Build each node's own peer spec once (needed to restart it later
@@ -118,17 +131,26 @@ func TestScenario_RollingRestarts(t *testing.T) {
 		dataDirs[n.ID] = filepath.Join(c.DataRoot, n.ID)
 	}
 
-	for _, n := range c.Nodes {
-		time.Sleep(1 * time.Second)
+	for stage, n := range c.Nodes {
 		t.Logf("rolling restart: killing %s", n.ID)
 		c.Kill(n.ID)
-		time.Sleep(500 * time.Millisecond)
+		recorder.Mark("killed", n.ID)
+		close(gates[stage])
+		for i := 0; i < 4; i++ {
+			select {
+			case <-completed:
+			case <-time.After(30 * time.Second):
+				t.Fatal("workload did not cross restart boundary")
+			}
+		}
 		t.Logf("rolling restart: restarting %s", n.ID)
 		c.Restart(n.ID, dataDirs[n.ID], peerSpecs[n.ID])
+		recorder.Mark("restarted", n.ID)
+		c.FindLeader(t, c.AllIDs(), 20*time.Second)
 	}
 
 	history := <-done
-	CheckAndCommit(t, "rolling_restarts", history)
+	CheckAndCommit(t, "rolling_restarts", history, recorder.Events()...)
 }
 
 // TestScenario_NetworkDelay adds substantial latency to every inter-node
@@ -141,18 +163,18 @@ func TestScenario_NetworkDelay(t *testing.T) {
 	c.FindLeader(t, c.AllIDs(), 20*time.Second)
 
 	c.SetDelay(150 * time.Millisecond)
+	recorder := NewRecorder()
+	recorder.Mark("delay_150ms_per_chunk", "all")
 	t.Cleanup(func() { c.SetDelay(0) })
 
-	history := RunWorkload(c, c.AllIDs(), 3, 6, keys(3), 30*time.Second)
-	CheckAndCommit(t, "network_delay", history)
+	history := RunWorkloadWithRecorder(recorder, c, c.AllIDs(), 3, 6, keys(3), 30*time.Second)
+	CheckAndCommit(t, "network_delay", history, recorder.Events()...)
 }
 
 // TestScenario_DoubleLeaderAttempt is the split-brain check: partition the
 // leader away from the majority, then attempt a write DIRECTLY against
-// the now-isolated old leader (bypassing retry to other nodes) at the same
-// time a write goes through the new majority-side leader. The old leader's
-// write must fail (it cannot reach a quorum to commit), proving there is
-// never a moment where two nodes can both successfully commit as leader.
+// the isolated old leader before a majority-side write. This checks the observed
+// attempts, not every possible overlap between elections and requests.
 func TestScenario_DoubleLeaderAttempt(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping fault-injection scenario in -short mode")
@@ -161,6 +183,8 @@ func TestScenario_DoubleLeaderAttempt(t *testing.T) {
 	oldLeader := c.FindLeader(t, c.AllIDs(), 20*time.Second)
 
 	c.Partition(oldLeader)
+	recorder := NewRecorder()
+	recorder.Mark("partition", oldLeader)
 	t.Cleanup(func() { c.Heal(oldLeader) })
 
 	majority := make([]string, 0, 2)
@@ -179,7 +203,7 @@ func TestScenario_DoubleLeaderAttempt(t *testing.T) {
 	// catches up), but the write must never actually commit.
 	oldLeaderClient := c.Client(t, oldLeader)
 	oldCtx, oldCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	_, oldErr := oldLeaderClient.Put(oldCtx, &pb.PutRequest{Key: []byte("split-brain-check"), Value: []byte("from-old-leader")})
+	oldErr := recorder.ExecuteOnce(oldCtx, 0, "put", "split-brain-check", "from-old-leader", oldLeader, oldLeaderClient)
 	oldCancel()
 	if oldErr == nil {
 		t.Fatal("expected a write against the partitioned old leader to fail (no quorum available), but it succeeded")
@@ -188,12 +212,17 @@ func TestScenario_DoubleLeaderAttempt(t *testing.T) {
 
 	newLeaderClient := c.Client(t, newLeader)
 	newCtx, newCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	_, newErr := newLeaderClient.Put(newCtx, &pb.PutRequest{Key: []byte("split-brain-check"), Value: []byte("from-new-leader")})
+	newErr := recorder.ExecuteOnce(newCtx, 0, "put", "split-brain-check", "from-new-leader", newLeader, newLeaderClient)
 	newCancel()
 	if newErr != nil {
 		t.Fatalf("expected a write against the new majority-side leader %s to succeed, got: %v", newLeader, newErr)
 	}
+	readCtx, readCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := recorder.ExecuteOnce(readCtx, 0, "get", "split-brain-check", "", newLeader, newLeaderClient); err != nil {
+		t.Fatal(err)
+	}
+	readCancel()
 
-	history := RunWorkload(c, majority, 3, 6, keys(3), 15*time.Second)
-	CheckAndCommit(t, "double_leader_attempt", history)
+	history := RunWorkloadWithRecorder(recorder, c, majority, 3, 6, keys(3), 15*time.Second)
+	CheckAndCommit(t, "double_leader_attempt", history, recorder.Events()...)
 }

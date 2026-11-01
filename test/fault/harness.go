@@ -21,7 +21,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -33,6 +32,7 @@ import (
 )
 
 var binPath string
+var buildMu sync.Mutex
 
 // Build compiles cmd/quorumkv-node once per test binary run. Safe to call
 // from any package (e.g. test/fault's own tests, or bench, which sits at a
@@ -40,6 +40,15 @@ var binPath string
 // this file's own location via runtime.Caller, not the caller's working
 // directory.
 func Build() error {
+	buildMu.Lock()
+	defer buildMu.Unlock()
+	if binary := os.Getenv("QUORUMKV_NODE_BINARY"); binary != "" {
+		if _, err := os.Stat(binary); err != nil {
+			return err
+		}
+		binPath = binary
+		return nil
+	}
 	if binPath != "" {
 		return nil
 	}
@@ -285,52 +294,34 @@ func (c *Cluster) AllIDs() []string {
 // Op is one recorded client operation, in the shape written to the
 // committed history JSON files (test/fault/results/*.json).
 type Op struct {
-	ClientID int    `json:"client_id"`
-	Kind     string `json:"kind"` // "put" or "get"
-	Key      string `json:"key"`
-	Value    string `json:"value,omitempty"`
-	CallNS   int64  `json:"call_ns"`
-	ReturnNS int64  `json:"return_ns"`
-	Found    bool   `json:"found,omitempty"`
-	GotValue string `json:"got_value,omitempty"`
-	Err      string `json:"err,omitempty"`
+	OperationID  int64  `json:"operation_id"`
+	AttemptID    int64  `json:"attempt_id"`
+	Attempt      int    `json:"attempt"`
+	Node         string `json:"node"`
+	Acknowledged bool   `json:"acknowledged"`
+	Outcome      string `json:"outcome"`
+	ClientID     int    `json:"client_id"`
+	Kind         string `json:"kind"` // "put" or "get"
+	Key          string `json:"key"`
+	Value        string `json:"value,omitempty"`
+	CallNS       int64  `json:"call_ns"`
+	ReturnNS     int64  `json:"return_ns"`
+	Found        bool   `json:"found,omitempty"`
+	GotValue     string `json:"got_value,omitempty"`
+	Err          string `json:"err,omitempty"`
 }
 
-// retryingCall issues fn against a rotating set of node clients, retrying
-// on any error (an unreachable/non-leader node) until it succeeds or
-// overallDeadline passes. This is what makes the workload realistic: a
-// real client facing a partition or a leader crash retries against a
-// different node, exactly as internal/raftnode.KVServer's "not leader"
-// error is meant to prompt.
-func retryingCall(clients []pb.KVClient, overallDeadline time.Time, fn func(pb.KVClient) error) error {
-	var lastErr error
-	i := 0
-	for time.Now().Before(overallDeadline) {
-		err := fn(clients[i%len(clients)])
-		if err == nil {
-			return nil
-		}
-		lastErr = err
-		i++
-		time.Sleep(50 * time.Millisecond)
-	}
-	return lastErr
-}
-
-// RunWorkload runs numClients concurrent "clients," each issuing opsPer
-// operations (randomly Put or Get, over the given keys) against the
-// cluster, retrying through partitions/leader changes, and returns the
-// full recorded history in call order (safe for Porcupine, which only
-// needs Call/Return timestamps, not slice order).
+// RunWorkload runs deterministic shared-key Put/Get/Delete/Get cycles. Each
+// logical operation can generate multiple independently recorded RPC attempts.
 func RunWorkload(cluster *Cluster, candidateIDs []string, numClients, opsPer int, keys []string, perOpTimeout time.Duration) []Op {
+	return RunWorkloadWithRecorder(NewRecorder(), cluster, candidateIDs, numClients, opsPer, keys, perOpTimeout)
+}
+
+func RunWorkloadWithRecorder(recorder *Recorder, cluster *Cluster, candidateIDs []string, numClients, opsPer int, keys []string, perOpTimeout time.Duration) []Op {
 	clients := make([]pb.KVClient, len(candidateIDs))
 	for i, id := range candidateIDs {
 		clients[i] = cluster.Client(cluster.t, id)
 	}
-
-	var mu sync.Mutex
-	var history []Op
-	var counter int64
 
 	var wg sync.WaitGroup
 	for c := 0; c < numClients; c++ {
@@ -338,79 +329,70 @@ func RunWorkload(cluster *Cluster, candidateIDs []string, numClients, opsPer int
 		go func(clientID int) {
 			defer wg.Done()
 			for i := 0; i < opsPer; i++ {
-				n := atomic.AddInt64(&counter, 1)
-				key := keys[int(n)%len(keys)]
-				isPut := n%2 == 0
-
-				op := Op{ClientID: clientID, Key: key}
-				op.CallNS = time.Now().UnixNano()
-				deadline := time.Now().Add(perOpTimeout)
-
-				if isPut {
-					value := fmt.Sprintf("v%d", n)
-					op.Kind = "put"
-					op.Value = value
-					err := retryingCall(clients, deadline, func(cl pb.KVClient) error {
-						ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-						defer cancel()
-						_, err := cl.Put(ctx, &pb.PutRequest{Key: []byte(key), Value: []byte(value)})
-						return err
-					})
-					if err != nil {
-						op.Err = err.Error()
-					}
-				} else {
-					op.Kind = "get"
-					err := retryingCall(clients, deadline, func(cl pb.KVClient) error {
-						ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-						defer cancel()
-						resp, err := cl.Get(ctx, &pb.GetRequest{Key: []byte(key)})
-						if err != nil {
-							return err
-						}
-						op.Found = resp.Found
-						op.GotValue = string(resp.Value)
-						return nil
-					})
-					if err != nil {
-						op.Err = err.Error()
-					}
+				if recorder.beforeOperation != nil {
+					recorder.beforeOperation(clientID, i)
 				}
-
-				op.ReturnNS = time.Now().UnixNano()
-				mu.Lock()
-				history = append(history, op)
-				mu.Unlock()
+				kind, key := workloadOperation(clientID, i, keys)
+				ctx, cancel := context.WithTimeout(context.Background(), perOpTimeout)
+				if err := recorder.Execute(ctx, clientID, kind, key, fmt.Sprintf("client-%d-op-%d", clientID, i), candidateIDs, clients, 2*time.Second); err != nil {
+					cluster.t.Errorf("client %d operation %d exhausted retries: %v", clientID, i, err)
+				}
+				cancel()
 			}
 		}(c)
 	}
 	wg.Wait()
-	return history
+	return recorder.History()
 }
 
-// WriteHistory commits the recorded history to test/fault/results/<name>.json
-// -- a real run's raw output, per the same "committed run output, not a
-// hand-typed number" discipline used elsewhere in this portfolio.
-func WriteHistory(name string, history []Op, linearizable bool) error {
-	if err := os.MkdirAll("results", 0o755); err != nil {
+// WriteHistory preserves raw attempts and fault events separately from the
+// historical v1 results. CallNS/ReturnNS in schema 2 are logical event ticks.
+func WriteHistory(name string, history []Op, linearizable bool, events ...FaultEvent) error {
+	dir := ResultsDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
+	operations := map[int64]bool{}
+	outcomes := map[string]int{}
+	for _, op := range history {
+		operations[op.OperationID] = true
+		outcomes[op.Outcome]++
+	}
 	out := struct {
-		Scenario     string    `json:"scenario"`
-		Timestamp    time.Time `json:"timestamp"`
-		Linearizable bool      `json:"linearizable"`
-		OpCount      int       `json:"op_count"`
-		Ops          []Op      `json:"ops"`
+		OperationCount int            `json:"operation_count"`
+		AttemptCount   int            `json:"attempt_count"`
+		Outcomes       map[string]int `json:"outcomes"`
+		Clock          string         `json:"clock"`
+		Scope          string         `json:"scope"`
+		Events         []FaultEvent   `json:"fault_events,omitempty"`
+		SchemaVersion  int            `json:"schema_version"`
+		Scenario       string         `json:"scenario"`
+		Timestamp      time.Time      `json:"timestamp"`
+		Linearizable   bool           `json:"linearizable"`
+		OpCount        int            `json:"op_count"`
+		Ops            []Op           `json:"ops"`
 	}{
-		Scenario:     name,
-		Timestamp:    time.Now().UTC(),
-		Linearizable: linearizable,
-		OpCount:      len(history),
-		Ops:          history,
+		OperationCount: len(operations), AttemptCount: len(history), Outcomes: outcomes,
+		Clock:         "logical_events",
+		Scope:         "observed_rpc_attempts_only",
+		Events:        events,
+		SchemaVersion: 2,
+		Scenario:      name,
+		Timestamp:     time.Now().UTC(),
+		Linearizable:  linearizable,
+		OpCount:       len(history),
+		Ops:           history,
 	}
 	data, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join("results", name+".json"), data, 0o644)
+	return os.WriteFile(filepath.Join(dir, name+".json"), data, 0o644)
+}
+
+func ResultsDir() string {
+	if dir := os.Getenv("QUORUMKV_RESULTS_DIR"); dir != "" {
+		return dir
+	}
+	return filepath.Join("results", "v2")
 }

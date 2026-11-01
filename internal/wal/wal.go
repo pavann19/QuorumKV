@@ -14,6 +14,7 @@ import (
 	"hash/crc32"
 	"io"
 	"os"
+	"time"
 )
 
 // OpType identifies what a Record does to the keyspace.
@@ -57,9 +58,18 @@ const MaxRecordSize = 16 << 20
 // returning nil is a durability promise a caller (e.g. a KV store's Put)
 // can rely on even across a hard crash immediately afterward.
 type WAL struct {
-	path   string
-	f      *os.File
-	failed error
+	path    string
+	f       durableFile
+	failed  error
+	metrics Counters
+}
+
+// The interface permits deterministic disk-failure fixtures without filling a
+// real/shared volume. Production always uses an ordinary os.File.
+type durableFile interface {
+	Write([]byte) (int, error)
+	Sync() error
+	Close() error
 }
 
 // Open opens (creating if necessary) the WAL file at path for appending.
@@ -118,6 +128,7 @@ func (w *WAL) Append(rec Record) (err error) {
 	}
 	defer func() {
 		if err != nil {
+			w.metrics.Failures.Add(1)
 			w.failed = err
 		}
 	}()
@@ -134,9 +145,14 @@ func (w *WAL) Append(rec Record) (err error) {
 	} else if n != len(buf) {
 		return io.ErrShortWrite
 	}
+	start := time.Now()
 	if err := w.f.Sync(); err != nil {
 		return fmt.Errorf("wal: fsync: %w", err)
 	}
+	w.metrics.SyncNanos.Add(uint64(time.Since(start)))
+	w.metrics.Syncs.Add(1)
+	w.metrics.Appends.Add(1)
+	w.metrics.Bytes.Add(uint64(len(buf)))
 	return nil
 }
 

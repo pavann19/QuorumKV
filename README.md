@@ -1,5 +1,7 @@
 # QuorumKV
 
+[Documentation index](docs/README.md) | [Verified baseline and remaining limits](docs/VERIFICATION.md)
+
 A Go key-value store with Raft replication, a local write-ahead log, and a
 process-based fault-injection harness. The project focuses on recovery behavior,
 read consistency, and tests that expose failures across replica boundaries.
@@ -10,6 +12,12 @@ test workloads. See the [ownership boundary](docs/RAFT_BOUNDARY.md) for the spli
 between project code and dependencies.
 
 ## Verification
+
+The [hosted CI](https://github.com/pavann19/QuorumKV/actions/runs/41203948838)
+and [Linux/Windows diagnostics](https://github.com/pavann19/QuorumKV/actions/runs/41203948781)
+passed for runtime revision `0d13601` on 1 November 2026. These cover build, vet,
+race-instrumented child processes, cluster/fault scenarios, separate measurements
+and checkpoint recovery regressions. Each later PR must pass its own checks.
 
 [CI passed on main](https://github.com/pavann19/QuorumKV/actions/runs/40066244588)
 for commit `9ca520e` on 2026-10-24. Build, vet, race checks, cluster/fault tests,
@@ -68,10 +76,14 @@ go test -tags=bench ./bench -run TestMeasure -count=1
 
 ## Scope and Limits
 
-This is a local demonstration and test project. The gRPC endpoints have no
-authentication or TLS; the command-line servers can bind to non-loopback addresses,
-so keep them on a trusted local machine. Cluster membership is static. Testing
-covers Windows locally and Linux in CI; macOS has not been verified.
+This is a local demonstration and test project. Replicated nodes support
+operator-configured mTLS and method authorization. Without an identity file,
+plaintext mode is restricted to literal loopback addresses; remote plaintext
+deployments must provision identities before upgrading. Trust roots and client
+allowlists are fixed for a process lifetime. Cluster membership is static. See
+the transport guide below for compatibility and remaining identity limits.
+Current hosted coverage includes Linux and Windows diagnostics; macOS has not
+been verified. Process recovery and checkpoint tests do not prove host resilience.
 
 The project has not been operated in production. Arbitrary disk corruption,
 power-loss durability, large-scale load, and sustained multi-host operation are
@@ -79,8 +91,12 @@ outside the verified scope. Read barriers add quorum traffic and log entries.
 Committed storage failures stop the affected process and require working storage
 before restart.
 
-Feature scope is frozen. Further changes should address a reproduced defect,
-a failing check, a dependency vulnerability, or a specific role requirement.
+The current candidate passed bounded local build, vet, functional and targeted
+race checks, plus 22 diagnostics/checkpoint tests after the documented fixed-fixture
+compilation step. The retained endurance attempt
+failed after about eight hours; checkpoint repair tests do not establish a
+completed 24-hour run. The checkpoint publication defect is repaired with unique
+temporary files and bounded sharing retries; its original failed run remains failed.
 
 ## Code and Design
 
@@ -92,5 +108,19 @@ a failing check, a dependency vulnerability, or a specific role requirement.
 - `cmd`: standalone server, replicated server, and crash-test writer.
 
 [Design decisions](docs/DECISIONS.md) describe the implementation trade-offs.
-[Portfolio notes](docs/PORTFOLIO.md) summarize the work and the technical questions
-it supports in a backend or platform interview.
+[Engineering notes](docs/ENGINEERING_NOTES.md) connect implementation choices
+to regression evidence and verification limits.
+
+
+Transport and recovery changes: [interfaces, compatibility and limits](docs/TRANSPORT_AND_RECOVERY.md).
+
+Bounded lab supervision: [checkpoint recovery and limits](docs/LAB_CHECKPOINTS.md).
+
+## License
+
+Original project code is licensed under [Apache-2.0](LICENSE). Dependency licenses,
+including the adopted Raft components, are retained in [third-party notices](THIRD_PARTY_NOTICES.txt).
+
+## Contributing and maintenance
+
+See [contributing](CONTRIBUTING.md), [maintenance rules](MAINTAINING.md) and [security reporting](SECURITY.md). Changes reach `main` through reviewed PRs and required checks.

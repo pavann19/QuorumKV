@@ -1,0 +1,21 @@
+name: Feature proposal
+description: A concrete user problem and proposed change
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and intended user
+      description: Describe the current limitation and a concrete example.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior and alternatives
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance and risks
+      description: Include compatibility, security/domain invariants and how the outcome can be verified.

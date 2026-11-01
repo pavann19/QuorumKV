@@ -2,20 +2,33 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'publication/20261031']
   pull_request:
 
 permissions:
   contents: read
 
 jobs:
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+      - name: Scan reachable history
+        run: >-
+          docker run --rm -v "$PWD:/repo"
+          ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+          git /repo --log-opts=--all --redact --no-banner
+
   test:
     runs-on: ubuntu-latest
     env:
       GOFLAGS: -race
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version-file: go.mod
       - name: Configure subprocess race reports
@@ -25,7 +38,10 @@ jobs:
       # Fast, deterministic unit/integration tests. test/cluster and test/fault
       # spawn real multi-process clusters and take real wall time; bench/ is
       # build-tagged and runs only in its own measurement job below.
-      - run: go test $(go list ./... | grep -vE '(test/cluster|test/fault|/bench)') -v -race -timeout 60s
+      - shell: bash
+        run: |
+          mapfile -t packages < <(go list ./... | grep -vE '(test/cluster|test/fault|/bench)')
+          go test "${packages[@]}" -v -race -timeout 60s
       - name: Check subprocess race reports
         if: always()
         shell: bash
@@ -42,8 +58,8 @@ jobs:
       # Inherit race instrumentation in the node binaries built by the harness.
       GOFLAGS: -race
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version-file: go.mod
       - name: Configure subprocess race reports
@@ -60,31 +76,33 @@ jobs:
             cat "$RUNNER_TEMP"/quorumkv-race.*
             exit 1
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
         with:
           name: fault-histories
-          path: test/fault/results/
+          path: test/fault/results/v2/
 
   bench:
     runs-on: ubuntu-latest
     needs: test
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version-file: go.mod
       - name: Measured failover time and throughput/latency (M3 exit criterion)
         run: go test -tags=bench ./bench/... -v -timeout 300s
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
         with:
           name: bench-results
-          path: bench/results/
+          path: bench/results/v2/
 
   vulnerabilities:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version-file: go.mod
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
