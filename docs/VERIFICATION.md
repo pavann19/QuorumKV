@@ -17,6 +17,8 @@ The retained soak failed after approximately 8 hours 5 minutes on Windows checkp
 
 ## Safe continuation
 
+During main-promotion checks, the Linux diagnostics PR run [41334221220](https://github.com/pavann19/QuorumKV/actions/runs/41334221220) failed the fixed lost-reply experiment during worker crash recovery. The matching push job passed. The worker previously discarded the subprocess output, so that receipt does not establish the underlying cause. The fixed synthetic regression now retains its output in operator/CI logs; that diagnostic change alone is not a root-cause fix. Preserve this failed run when evaluating subsequent checks.
+
 1. Reproduce the relevant focused regression in an isolated environment before changing behavior.
 2. Preserve failing artifacts and record the new source revision, configuration, workload and outcome separately.
 3. Keep optional AI output advisory; it cannot change admission policy, replay financial writes or operate cluster membership autonomously.

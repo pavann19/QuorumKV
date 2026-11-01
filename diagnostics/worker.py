@@ -276,7 +276,10 @@ def run_job(queue, job, model=None):
         with tempfile.TemporaryDirectory(prefix="quorumkv-agent-lab-") as target:
             env = {k: v for k, v in os.environ.items() if not k.startswith("QUORUMKV_") and k not in ("GOFLAGS", "GORACE")}
             env["QUORUMKV_RESULTS_DIR"] = target
-            proc = subprocess.Popen(["go", "test", "./test/fault", "-run", "^TestRecorderPreservesAppliedWriteWithLostReply$", "-count=1", "-timeout=20s"], cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Keep the fixed synthetic regression's output in the operator/CI
+            # log. Discarding it hid the actual reason for experiment failure.
+            # No job-supplied command, target or evidence is printed here.
+            proc = subprocess.Popen(["go", "test", "./test/fault", "-run", "^TestRecorderPreservesAppliedWriteWithLostReply$", "-count=1", "-timeout=20s"], cwd=ROOT, env=env)
             try:
                 code = proc.wait(timeout=30)
             except subprocess.TimeoutExpired:
