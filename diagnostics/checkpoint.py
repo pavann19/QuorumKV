@@ -10,6 +10,74 @@ import tempfile
 import time
 
 
+def _open_read(path):
+    if os.name != 'nt':
+        return Path(path).open('rb')
+    # Windows readers must permit rename/delete while retaining their own
+    # complete observation. The default Python file sharing mode denies it.
+    import ctypes
+    from ctypes import wintypes
+    import msvcrt
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    create = kernel.CreateFileW
+    create.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                       ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD,
+                       wintypes.HANDLE]
+    create.restype = wintypes.HANDLE
+    close = kernel.CloseHandle
+    close.argtypes = [wintypes.HANDLE]
+    close.restype = wintypes.BOOL
+    handle = create(str(Path(path).absolute()), 0x80000000, 0x7, None, 3, 0x80, None)
+    if handle == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        fd = msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY)
+    except BaseException:
+        close(handle)
+        raise
+    try:
+        return os.fdopen(fd, 'rb')
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def _replace(source, destination):
+    if os.name != 'nt':
+        return os.replace(source, destination)
+    import ctypes
+    from ctypes import wintypes
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    create = kernel.CreateFileW
+    create.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                       ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD,
+                       wintypes.HANDLE]
+    create.restype = wintypes.HANDLE
+    close = kernel.CloseHandle
+    close.argtypes = [wintypes.HANDLE]
+    close.restype = wintypes.BOOL
+    rename = kernel.SetFileInformationByHandle
+    rename.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+    rename.restype = wintypes.BOOL
+    target = str(destination.absolute())
+    target_bytes = target.encode('utf-16-le')
+    class RenameInfo(ctypes.Structure):
+        _fields_ = [('flags', wintypes.DWORD), ('root', wintypes.HANDLE),
+                    ('length', wintypes.DWORD), ('name', wintypes.WCHAR * (len(target_bytes) // 2 + 1))]
+    info = RenameInfo()
+    info.flags = 0x3  # Replace existing name with POSIX semantics, preserving open readers.
+    info.length = len(target_bytes)
+    info.name = target
+    handle = create(str(source.absolute()), 0x10000, 0x7, None, 3, 0x80, None)
+    if handle == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        if not rename(handle, 22, ctypes.byref(info), ctypes.sizeof(info)):
+            raise ctypes.WinError(ctypes.get_last_error())
+    finally:
+        close(handle)
+
+
 def read_bytes(path, *, attempts=8, delay=0.025):
     """Read bounded bytes, retrying only transient sharing denial."""
     if type(attempts) is not int or not 1 <= attempts <= 8:
@@ -18,7 +86,7 @@ def read_bytes(path, *, attempts=8, delay=0.025):
         raise ValueError('delay must be 0..0.025 seconds')
     for attempt in range(attempts):
         try:
-            with Path(path).open('rb') as source:
+            with _open_read(path) as source:
                 raw = source.read((1 << 20) + 1)
             if len(raw) > 1 << 20:
                 raise ValueError('checkpoint exceeds 1 MiB')
@@ -60,7 +128,7 @@ def save(path, data, *, attempts=8, delay=0.025):
         os.fsync(output.fileno())
     for attempt in range(attempts):
         try:
-            os.replace(temporary, path)
+            _replace(temporary, path)
             return
         except PermissionError:
             if attempt + 1 == attempts:

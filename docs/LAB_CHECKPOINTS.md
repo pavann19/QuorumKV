@@ -33,8 +33,18 @@ durability is not established. Use one owner for acceptance metadata.
 
 Tests cover transient/persistent denial, concurrent reader/publisher visibility,
 actual process termination before replace, restart with retained orphan, corrupt
-JSON and rejected budgets. The first Windows concurrency attempt failed on reader
-sharing denial and is retained privately; bounded reader retry fixed that fixture.
+JSON and rejected budgets. Earlier reader retries were insufficient: a later
+[Windows CI run](https://github.com/pavann19/QuorumKV/actions/runs/41328503174)
+exhausted replacement retries while readers were active. Windows readers now share
+delete access, and publication uses native rename with replacement and POSIX
+semantics. A held-reader regression verifies both the new destination and the
+complete old observation; Unicode paths are also covered. The retry budget is unchanged.
+This Windows path requires Windows 10 version 1607 / Server 2016 or later and a
+filesystem supporting the native rename operation; unsupported operations fail
+and retain the unpublished sibling. Hosted coverage uses Windows Server 2022;
+network filesystems and older Windows versions are unverified. See Microsoft's
+[rename information](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_rename_info)
+and [replacement semantics](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_rename_information).
 The earlier 8h05m WinError 5 soak failure remains failed and its exact cause is
 unproven. These tests do not establish supervisor readiness over 24 hours.
 

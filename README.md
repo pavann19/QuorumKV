@@ -90,7 +90,7 @@ Committed storage failures stop the affected process and require working storage
 before restart.
 
 The current candidate passed bounded local build, vet, functional and targeted
-race checks, plus 20 diagnostics/checkpoint tests after the documented fixed-fixture
+race checks, plus 22 diagnostics/checkpoint tests after the documented fixed-fixture
 compilation step. The retained endurance attempt
 failed after about eight hours; checkpoint repair tests do not establish a
 completed 24-hour run. The checkpoint publication defect is repaired with unique
