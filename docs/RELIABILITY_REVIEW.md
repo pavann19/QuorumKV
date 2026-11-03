@@ -4,6 +4,9 @@ QuorumKV has a tested local correctness foundation. Production release gates
 remain open. This source review and its bounded tests do not establish a
 production deployment, host resilience or a service availability guarantee.
 
+The [checkpoint assessment](CORRECTNESS_CHECKLIST.md) maps the requested failure
+validation tasks to concrete evidence: six complete within scope and two partial.
+
 ## Runtime fixes
 
 | Finding | Previous behavior | Resulting behavior and regressions |
