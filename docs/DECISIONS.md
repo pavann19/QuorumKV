@@ -307,6 +307,11 @@ no added confidence.
 
 ## WAL record framing: length + CRC32, not a fixed-size header alone
 
+Historical behavior below is superseded by the November 2026 reliability fix.
+Complete checksum or structural corruption now returns `wal.ErrCorrupt` and
+preserves the original file. Only incomplete trailing appends remain repairable.
+See [the reliability review](RELIABILITY_REVIEW.md).
+
 Each record is `[4-byte length][4-byte CRC32][op][key][value]`, and `Replay` treats *any* record
 that doesn't fully validate (too short, checksum mismatch) as "no more valid records" rather than
 an error.

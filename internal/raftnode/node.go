@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	transport "github.com/Jille/raft-grpc-transport"
@@ -35,6 +36,8 @@ type Node struct {
 	Store     *store.Store
 	transport *transport.Manager
 	logStore  *raftboltdb.BoltStore
+	kvOnce    sync.Once
+	kvServer  *KVServer
 }
 
 // New bootstraps a Raft node: opens (or replays) its local store, opens

@@ -13,6 +13,9 @@ between project code and dependencies.
 
 ## Verification
 
+The [reliability review](docs/RELIABILITY_REVIEW.md) describes fail-closed WAL
+recovery, shared node admission and the remaining production acceptance gates.
+
 The [hosted CI](https://github.com/pavann19/QuorumKV/actions/runs/41203948838)
 and [Linux/Windows diagnostics](https://github.com/pavann19/QuorumKV/actions/runs/41203948781)
 passed for runtime revision `0d13601` on 1 November 2026. These cover build, vet,

@@ -23,12 +23,12 @@ from checkpoint import save, read, read_bytes
 
 def source_identity():
     result = {}
-    for prefix in ("cmd", "internal", "proto", "test", "bench", "diagnostics", "scripts"):
+    for prefix in ("cmd", "internal", "proto", "test", "bench", "diagnostics", "scripts", ".github/workflows", "deploy"):
         for folder, dirs, files in os.walk(ROOT / prefix):
             dirs[:] = [d for d in dirs if d not in ("results", "__pycache__", ".git")]
             for name in files:
                 path = Path(folder) / name
-                if path.suffix in (".go", ".py"):
+                if path.suffix in (".go", ".py", ".yml", ".yaml", ".service"):
                     result[path.relative_to(ROOT).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
     for name in ("go.mod", "go.sum"):
         result[name] = hashlib.sha256((ROOT / name).read_bytes()).hexdigest()

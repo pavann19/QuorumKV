@@ -28,7 +28,10 @@ type KVServer struct {
 }
 
 func NewKVServer(n *Node) *KVServer {
-	return &KVServer{Node: n}
+	// All entry points, including HTTP readiness, share outstanding futures.
+	// Recreating wrappers must not reset the node's admission budget.
+	n.kvOnce.Do(func() { n.kvServer = &KVServer{Node: n} })
+	return n.kvServer
 }
 
 // Get commits a Raft barrier before reading, fencing isolated leaders and

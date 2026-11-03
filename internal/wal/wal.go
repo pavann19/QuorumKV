@@ -10,6 +10,7 @@ package wal
 import (
 	"bufio"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"io"
@@ -44,11 +45,13 @@ type Record struct {
 //	[len(Value) bytes: Value]
 //
 // The length+CRC framing is what lets Replay distinguish a real record from
-// a torn write left by a crash mid-append: a torn write is either too short
-// to contain its own declared length, or its CRC won't match, and Replay
-// stops at the first record it can't fully validate rather than treating
-// that as a fatal error.
+// an incomplete trailing append. Complete records with invalid CRCs or
+// structure fail recovery: they may contain acknowledged state.
 const headerLen = 4 + 4 // recordLen + CRC32
+
+// ErrCorrupt means recovery cannot safely infer the acknowledged state. Preserve
+// the original file and recover from a verified backup; never silently truncate.
+var ErrCorrupt = errors.New("wal: corrupt record")
 
 // MaxRecordSize bounds allocations when reading untrusted on-disk lengths.
 const MaxRecordSize = 16 << 20
@@ -250,11 +253,9 @@ func appendLenPrefixed(buf, data []byte) []byte {
 }
 
 // Replay reads every valid record from the WAL file at path, in order. It
-// stops -- without returning an error -- at the first record that is
-// incomplete or fails its CRC check, since that is exactly the shape a
-// crash mid-Append leaves behind: a torn trailing write, not corruption
-// that should halt recovery. Any fully-written, CRC-valid record before
-// that point is returned; nothing after it is trusted.
+// stops at an incomplete trailing append. Complete records with checksum or
+// structural damage return an error, rather than silently dropping potentially
+// acknowledged state. Replay never modifies the file.
 func Replay(path string) ([]Record, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -281,10 +282,8 @@ func Replay(path string) ([]Record, error) {
 }
 
 // readOneRecord reads one record from r. ok is false (with a nil error)
-// when the stream ends cleanly at a record boundary, OR when what follows
-// doesn't form a complete, CRC-valid record (the torn-tail case) -- both
-// are treated as "no more valid records," never as errors, since Replay's
-// whole job is to recover exactly what was durably written and stop there.
+// when the stream ends cleanly or with an incomplete trailing append. Complete
+// malformed records are corruption, not proof of an unacknowledged write.
 func readOneRecord(r *bufio.Reader) (rec Record, ok bool, err error) {
 	header := make([]byte, headerLen)
 	n, err := io.ReadFull(r, header)
@@ -299,8 +298,8 @@ func readOneRecord(r *bufio.Reader) (rec Record, ok bool, err error) {
 	}
 
 	bodyLen := binary.LittleEndian.Uint32(header[0:4])
-	if bodyLen > MaxRecordSize {
-		return Record{}, false, fmt.Errorf("wal: record length %d exceeds limit", bodyLen)
+	if bodyLen < 9 || bodyLen > MaxRecordSize {
+		return Record{}, false, fmt.Errorf("%w: invalid record length %d", ErrCorrupt, bodyLen)
 	}
 	wantSum := binary.LittleEndian.Uint32(header[4:8])
 
@@ -313,12 +312,12 @@ func readOneRecord(r *bufio.Reader) (rec Record, ok bool, err error) {
 	}
 
 	if crc32.ChecksumIEEE(body) != wantSum {
-		return Record{}, false, nil // torn/corrupt: bytes present but don't match their own checksum
+		return Record{}, false, fmt.Errorf("%w: checksum mismatch", ErrCorrupt)
 	}
 
 	rec, err = decodeBody(body)
 	if err != nil {
-		return Record{}, false, nil // internally inconsistent despite a valid CRC; treat as torn
+		return Record{}, false, fmt.Errorf("%w: %v", ErrCorrupt, err)
 	}
 	return rec, true, nil
 }

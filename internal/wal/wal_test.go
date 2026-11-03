@@ -107,7 +107,7 @@ func TestReplay_StopsAtTornTrailingRecord(t *testing.T) {
 	}
 }
 
-func TestReplay_StopsAtCorruptedChecksum(t *testing.T) {
+func TestReplay_RejectsCorruptedChecksum(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "corrupt.wal")
 	w, err := Open(path)
 	if err != nil {
@@ -135,11 +135,7 @@ func TestReplay_StopsAtCorruptedChecksum(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := Replay(path)
-	if err != nil {
-		t.Fatalf("expected corruption to be silently truncated, not an error: %v", err)
-	}
-	if len(got) != 1 {
-		t.Fatalf("expected exactly 1 valid record before the corrupted one, got %d", len(got))
+	if _, err := Replay(path); err == nil {
+		t.Fatal("complete checksum corruption must fail recovery")
 	}
 }
