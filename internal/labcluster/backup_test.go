@@ -2,6 +2,7 @@ package labcluster
 
 import (
 	"context"
+	"fmt"
 	pb "github.com/pavann19/quorumkv/proto/quorumkvpb"
 	"io"
 	"os"
@@ -12,7 +13,12 @@ import (
 )
 
 func TestOfflineBackupRestoreExactState(t *testing.T) {
-	c, err := New(t.TempDir())
+	for _, format := range []uint32{0, 1} {
+		t.Run(fmt.Sprint("format-", format), func(t *testing.T) { testOfflineBackupRestoreExactState(t, format) })
+	}
+}
+func testOfflineBackupRestoreExactState(t *testing.T, format uint32) {
+	c, err := newModeFormat(t.TempDir(), true, format)
 	if err != nil {
 		t.Fatal(err)
 	}

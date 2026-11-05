@@ -5,8 +5,10 @@ package telemetry
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/pavann19/quorumkv/internal/raftnode"
+	"github.com/pavann19/quorumkv/internal/requestlimits"
 	pb "github.com/pavann19/quorumkv/proto/quorumkvpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/status"
@@ -58,7 +60,7 @@ func (m *Metrics) Unary(ctx context.Context, req any, info *grpc.UnaryServerInfo
 	}
 	return response, err
 }
-func (m *Metrics) Handler(n *raftnode.Node, configHash string) http.Handler {
+func (m *Metrics) Handler(n *raftnode.Node, configHash string, suppliedConfig ...any) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/live", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "live") })
 	mux.HandleFunc("/startup", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "storage open; transport registered") })
@@ -77,7 +79,24 @@ func (m *Metrics) Handler(n *raftnode.Node, configHash string) http.Handler {
 	})
 	mux.HandleFunc("/effective-config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"schema":1,"configuration_sha256":%q,"max_key_bytes":4096,"max_value_bytes":1048576,"max_message_bytes":4194304,"max_inflight_kv":64,"rpc_deadline_seconds":5}`, configHash)
+		limits := n.Store.Limits()
+		requests := n.RequestLimits()
+		report := map[string]any{
+			"schema": 1, "configuration_sha256": configHash,
+			"write_read_grace_ms": requests.WriteReadGraceMS,
+			"max_key_bytes":       requests.KeyBytes, "max_value_bytes": requests.ValueBytes, "max_message_bytes": requestlimits.MaxMessageBytes,
+			"max_inflight_kv": requests.Inflight, "max_streams": requests.Streams, "rpc_deadline_ms": requests.TimeoutMS, "rpc_deadline_seconds": float64(requests.TimeoutMS) / 1000,
+			"max_store_bytes": limits.MaxBytes, "max_store_entries": limits.MaxEntries,
+			"disk_watermark_percent": n.DiskPolicy().MaxUsedPercent, "min_disk_free_bytes": n.DiskPolicy().MinFreeBytes,
+			"read_mode":               n.ReadMode(),
+			"snapshot_format_version": n.SnapshotFormatVersion(),
+			"wal_format_version":      n.WALFormatVersion(), "command_format_version": n.CommandFormatVersion(),
+			"raft": n.EffectiveRaftSettings(), "cluster_id": n.ClusterID(), "peer_protocol_version": n.PeerProtocolVersion(),
+		}
+		if len(suppliedConfig) == 1 {
+			report["node_configuration"] = suppliedConfig[0]
+		}
+		json.NewEncoder(w).Encode(report)
 	})
 	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
@@ -103,6 +122,17 @@ func (m *Metrics) Handler(n *raftnode.Node, configHash string) http.Handler {
 			value, _ := strconv.ParseUint(stats[key], 10, 64)
 			fmt.Fprintf(w, "quorumkv_raft_%s %d\n", key, value)
 		}
+		disk, _ := n.DiskStatus()
+		known, degraded := 0, 0
+		if disk.Known {
+			known = 1
+		}
+		if disk.Degraded {
+			degraded = 1
+		}
+		fmt.Fprintf(w, "# HELP quorumkv_disk_status_known Whether local disk capacity could be observed.\n# TYPE quorumkv_disk_status_known gauge\nquorumkv_disk_status_known %d\n# HELP quorumkv_disk_degraded Whether new local client writes are refused for disk capacity.\n# TYPE quorumkv_disk_degraded gauge\nquorumkv_disk_degraded %d\nquorumkv_disk_available_bytes %d\nquorumkv_disk_total_bytes %d\n", known, degraded, disk.Available, disk.Total)
+		usage := n.Store.Usage()
+		fmt.Fprintf(w, "# HELP quorumkv_store_bytes Logical key and value bytes.\n# TYPE quorumkv_store_bytes gauge\nquorumkv_store_bytes %d\n# HELP quorumkv_store_keys Distinct stored keys.\n# TYPE quorumkv_store_keys gauge\nquorumkv_store_keys %d\nquorumkv_store_reserved_bytes %d\nquorumkv_store_reserved_entries %d\n", usage.Bytes, usage.Entries, usage.ReservedBytes, usage.ReservedEntries)
 		wal := n.Store.WALStats()
 		fmt.Fprintf(w, "quorumkv_wal_appends_total %d\nquorumkv_wal_bytes_total %d\nquorumkv_wal_syncs_total %d\nquorumkv_wal_failures_total %d\nquorumkv_wal_sync_seconds_sum %f\n", wal.Appends, wal.Bytes, wal.Syncs, wal.Failures, float64(wal.SyncNanos)/1e9)
 	})

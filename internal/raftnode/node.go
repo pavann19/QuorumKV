@@ -15,14 +15,14 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/pavann19/quorumkv/internal/diskhealth"
+	"github.com/pavann19/quorumkv/internal/memberlock"
+	"github.com/pavann19/quorumkv/internal/requestlimits"
 	"github.com/pavann19/quorumkv/internal/store"
+	"github.com/pavann19/quorumkv/internal/wal"
 )
 
-// Peer is one member of the static cluster configuration every node
-// bootstraps with. Per hashicorp/raft's own documented pattern for a
-// fixed-membership cluster, every node calls BootstrapCluster with an
-// identical peer list at startup; it is a no-op on any node that already
-// has log entries, so it's safe to call unconditionally on every restart.
+// Peer identifies a voting member in the operator-supplied configuration.
 type Peer struct {
 	ID   string
 	Addr string // host:port, also used as the gRPC listen address
@@ -32,43 +32,98 @@ type Peer struct {
 // register it (and the gRPC-based Raft transport) onto a *grpc.Server, and
 // the Store the FSM applies committed entries to.
 type Node struct {
-	Raft      *raft.Raft
-	Store     *store.Store
-	transport *transport.Manager
-	logStore  *raftboltdb.BoltStore
-	kvOnce    sync.Once
-	kvServer  *KVServer
+	Raft                  *raft.Raft
+	fsm                   *FSM
+	readLogs              raft.LogStore
+	readMode              string
+	readFence             readFenceCache
+	readPhases            [4]readPhaseCounters
+	Store                 *store.Store
+	transport             *transport.Manager
+	logStore              *raftboltdb.BoltStore
+	directoryLock         *memberlock.Lock
+	kvOnce                sync.Once
+	kvServer              *KVServer
+	dataDir               string
+	diskPolicy            diskhealth.Policy
+	requestLimits         requestlimits.Limits
+	snapshotFormatVersion uint32
+	walFormatVersion      uint32
+	commandFormatVersion  uint32
+	raftSettings          RaftSettings
+	clusterID             string
+	diskProbe             func(string) (diskhealth.Space, error)
 }
 
-// New bootstraps a Raft node: opens (or replays) its local store, opens
-// its Raft log/stable/snapshot stores under dataDir, wires up the gRPC
-// transport for the given self peer, and bootstraps the cluster with
-// peers (a no-op if this node's log is already non-empty, e.g. on
-// restart). It does not start serving gRPC -- call Register on the
-// returned Node's transport via RegisterOn before starting the server.
-func New(self Peer, peers []Peer, dataDir string) (*Node, error) {
-	return newNode(self, peers, dataDir, nil)
+// New opens a plaintext lab node. Empty state requires explicit bootstrap options.
+func New(self Peer, peers []Peer, dataDir string, options ...StartOptions) (*Node, error) {
+	return newNodeTransport(self, peers, dataDir, nil, insecure.NewCredentials(), options...)
 }
 
 // NewAuthenticated uses the same deterministic storage/FSM with an authenticated transport.
-func NewAuthenticated(self Peer, peers []Peer, dataDir string, creds credentials.TransportCredentials) (*Node, error) {
+func NewAuthenticated(self Peer, peers []Peer, dataDir string, creds credentials.TransportCredentials, options ...StartOptions) (*Node, error) {
 	if creds == nil {
 		return nil, errors.New("transport credentials required")
 	}
-	return newNodeTransport(self, peers, dataDir, nil, creds)
+	return newNodeTransport(self, peers, dataDir, nil, creds, options...)
 }
 
 func newNode(self Peer, peers []Peer, dataDir string, cfg *raft.Config) (_ *Node, resultErr error) {
-	return newNodeTransport(self, peers, dataDir, cfg, insecure.NewCredentials())
+	return newNodeTransport(self, peers, dataDir, cfg, insecure.NewCredentials(), StartOptions{DiskPolicy: diskhealth.Policy{MaxUsedPercent: 95, MinFreeBytes: 64 << 20}, Bootstrap: true, BootstrapExpect: len(peers), ClusterID: "internal-test-cluster"})
 }
 
-func newNodeTransport(self Peer, peers []Peer, dataDir string, cfg *raft.Config, creds credentials.TransportCredentials) (_ *Node, resultErr error) {
-	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+func newNodeTransport(self Peer, peers []Peer, dataDir string, cfg *raft.Config, creds credentials.TransportCredentials, options ...StartOptions) (_ *Node, resultErr error) {
+	start, err := validateStart(self, peers, options)
+	if err != nil {
+		return nil, err
+	}
+	if cfg == nil {
+		cfg = start.RaftSettings.config(raft.ServerID(self.ID))
+	} else {
+		cloned := *cfg
+		cfg = &cloned
+		cfg.LocalID = raft.ServerID(self.ID)
+		cfg.MaxAppendEntries = start.RaftSettings.MaxAppendEntries
+	}
+	if err := settingsFromRaft(cfg).Validate(); err != nil {
+		return nil, err
+	}
+	if err := raft.ValidateConfig(cfg); err != nil {
+		return nil, err
+	}
+	if err := wal.MakeDurableDir(dataDir, 0o700); err != nil {
 		return nil, fmt.Errorf("raftnode: creating data dir: %w", err)
 	}
-
-	st, err := store.Open(filepath.Join(dataDir, "store.wal"))
+	directoryLock, err := memberlock.Acquire(dataDir)
 	if err != nil {
+		return nil, fmt.Errorf("raftnode: member ownership: %w", err)
+	}
+	defer func() {
+		if resultErr != nil {
+			directoryLock.Close()
+		}
+	}()
+	if err := checkFatal(dataDir, start.ClearFatal); err != nil {
+		return nil, err
+	}
+	if _, err := os.Lstat(filepath.Join(dataDir, migrationIncomplete)); !errors.Is(err, os.ErrNotExist) {
+		return nil, errors.New("raftnode: incomplete migration copy; preserve directory and follow conversion runbook")
+	}
+	// Validate only after acquiring ownership, before opening any persistent store.
+	if err := validateManifest(dataDir, self, peers, start); err != nil {
+		return nil, err
+	}
+
+	walFormat := wal.Format{Version: start.WALFormatVersion}
+	if walFormat.Version == 1 {
+		walFormat.ClusterID = start.ClusterID
+	}
+	st, err := store.OpenWithWALFormat(filepath.Join(dataDir, "store.wal"), start.StoreLimits, walFormat)
+	if err != nil {
+		if errors.Is(err, wal.ErrCorrupt) {
+			markerErr := writeFatal(dataDir, "wal_corruption", 0)
+			return nil, errors.Join(ErrFatalState, err, markerErr)
+		}
 		return nil, fmt.Errorf("raftnode: opening store: %w", err)
 	}
 	defer func() {
@@ -92,21 +147,59 @@ func newNodeTransport(self Peer, peers []Peer, dataDir string, cfg *raft.Config,
 		return nil, fmt.Errorf("raftnode: opening snapshot store: %w", err)
 	}
 
-	tm := transport.New(raft.ServerAddress(self.Addr), []grpc.DialOption{grpc.WithTransportCredentials(creds), grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(4<<20), grpc.MaxCallSendMsgSize(4<<20))})
+	hasState, err := raft.HasExistingState(logStore, logStore, snapshotStore)
+	if err != nil {
+		return nil, fmt.Errorf("raftnode: inspect persisted state: %w", err)
+	}
+	if !hasState && !start.Bootstrap {
+		return nil, errors.New("raftnode: empty Raft state; explicit -bootstrap required for a new cluster")
+	}
+	if err := persistManifest(dataDir, self, peers, start, hasState); err != nil {
+		return nil, err
+	}
+
+	// Inspect persisted membership without replaying snapshots into the live FSM,
+	// starting background work or opening network connections. Clone the config:
+	// raft.GetConfiguration mutates its private skipStartup flag.
+	if hasState {
+		inspection := raft.DefaultConfig()
+		if cfg != nil {
+			*inspection = *cfg
+		}
+		inspection.LocalID = raft.ServerID(self.ID)
+		inspection.NoSnapshotRestoreOnStart = true
+		_, probeTransport := raft.NewInmemTransport(raft.ServerAddress(self.Addr))
+		actual, inspectErr := inspectConfiguration(inspection, logStore, logStore, snapshotStore, probeTransport)
+		probeTransport.Close()
+		if inspectErr != nil {
+			return nil, fmt.Errorf("raftnode: inspect membership: %w", inspectErr)
+		}
+		if !sameConfiguration(actual, peers) {
+			return nil, errors.New("raftnode: configured peers differ from persisted Raft membership")
+		}
+	}
+
+	// The store WAL is an independently verified durability copy, not a replay
+	// cursor. Rebuild the FSM from Raft snapshot + committed log, starting empty,
+	// so historical capacity decisions see their original state rather than the
+	// latest preloaded WAL state. Existing corrupt WALs were refused above.
+	if !hasState && st.Usage().Entries != 0 {
+		return nil, errors.New("raftnode: nonempty store without Raft state; explicit recovery required")
+	}
+	if err := st.Restore(nil); err != nil {
+		return nil, fmt.Errorf("raftnode: initialize Raft replay: %w", err)
+	}
+
+	tm := transport.New(raft.ServerAddress(self.Addr), []grpc.DialOption{grpc.WithTransportCredentials(creds), grpc.WithChainUnaryInterceptor(peerUnaryClient(start.ClusterID, start.SnapshotFormatVersion, start.CommandFormatVersion)), grpc.WithChainStreamInterceptor(peerStreamClient(start.ClusterID, start.SnapshotFormatVersion, start.CommandFormatVersion)), grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(requestlimits.MaxMessageBytes), grpc.MaxCallSendMsgSize(requestlimits.MaxMessageBytes))})
 	defer func() {
 		if resultErr != nil {
 			tm.Close()
 		}
 	}()
 
-	if cfg == nil {
-		cfg = raft.DefaultConfig()
-	}
-	// Bound append batches below the transport message ceiling even with 1 MiB values.
-	cfg.MaxAppendEntries = 1
-	cfg.LocalID = raft.ServerID(self.ID)
+	// cfg was cloned, bounded and validated before any member storage was opened.
 
-	fsm := &FSM{Store: st}
+	fsm := &FSM{Store: st, clusterID: start.ClusterID, snapshotFormatVersion: start.SnapshotFormatVersion, commandFormatVersion: start.CommandFormatVersion, fatal: func(reason string, index uint64) { fatalStop(dataDir, reason, index) }}
 	r, err := raft.NewRaft(cfg, fsm, logStore, logStore, snapshotStore, tm.Transport())
 	if err != nil {
 		return nil, fmt.Errorf("raftnode: starting raft: %w", err)
@@ -116,21 +209,31 @@ func newNodeTransport(self Peer, peers []Peer, dataDir string, cfg *raft.Config,
 	for i, p := range peers {
 		servers[i] = raft.Server{ID: raft.ServerID(p.ID), Address: raft.ServerAddress(p.Addr)}
 	}
-	// Idempotent: only takes effect if this node's log is empty. Safe to
-	// call on every startup, including after a restart with existing state.
-	if err := r.BootstrapCluster(raft.Configuration{Servers: servers}).Error(); err != nil && !errors.Is(err, raft.ErrCantBootstrap) {
-		r.Shutdown().Error()
-		return nil, fmt.Errorf("raftnode: bootstrap: %w", err)
+	if !hasState {
+		if err := r.BootstrapCluster(raft.Configuration{Servers: servers}).Error(); err != nil {
+			r.Shutdown().Error()
+			return nil, fmt.Errorf("raftnode: bootstrap: %w", err)
+		}
+	} else {
+		actual := r.GetConfiguration()
+		if err := actual.Error(); err != nil {
+			r.Shutdown().Error()
+			return nil, err
+		}
+		if !sameConfiguration(actual.Configuration(), peers) {
+			r.Shutdown().Error()
+			return nil, errors.New("raftnode: configured peers differ from persisted Raft membership")
+		}
 	}
 
-	return &Node{Raft: r, Store: st, transport: tm, logStore: logStore}, nil
+	return &Node{Raft: r, fsm: fsm, readLogs: logStore, readMode: start.ReadMode, Store: st, transport: tm, logStore: logStore, directoryLock: directoryLock, dataDir: dataDir, diskPolicy: start.DiskPolicy, diskProbe: diskhealth.Probe, requestLimits: start.RequestLimits, snapshotFormatVersion: start.SnapshotFormatVersion, walFormatVersion: start.WALFormatVersion, commandFormatVersion: start.CommandFormatVersion, raftSettings: settingsFromRaft(cfg), clusterID: start.ClusterID}, nil
 }
 
 // RegisterOn attaches the Raft gRPC transport's service handlers to s. The
 // caller is responsible for also registering the KV service (internal/kv)
 // on the same *grpc.Server and starting it.
 func (n *Node) RegisterOn(s *grpc.Server) {
-	n.transport.Register(s)
+	n.transport.Register(peerRegistrar{registrar: s, clusterID: n.clusterID, format: n.snapshotFormatVersion, commandFormat: n.commandFormatVersion})
 }
 
 // IsLeader reports whether this node currently believes it is the leader.
@@ -150,7 +253,8 @@ func (n *Node) LeaderAddr() string {
 // enqueueing, not commitment. It must only be called on the leader;
 // a non-leader returns raft.ErrNotLeader.
 func (n *Node) apply(cmd command, timeout time.Duration) error {
-	data, err := encodeCommand(cmd)
+	cmd.Limits = n.Store.Limits()
+	data, err := encodeCommandFormat(cmd, n.clusterID, n.commandFormatVersion)
 	if err != nil {
 		return err
 	}
@@ -166,11 +270,22 @@ func (n *Node) apply(cmd command, timeout time.Duration) error {
 
 // Put replicates a Put through Raft.
 func (n *Node) Put(key, value []byte, timeout time.Duration) error {
+	if err := n.admitDisk(); err != nil {
+		return err
+	}
+	release, err := n.Store.ReservePut(key, value)
+	if err != nil {
+		return err
+	}
+	defer release()
 	return n.apply(command{Op: opPut, Key: key, Value: value}, timeout)
 }
 
 // Delete replicates a Delete through Raft.
 func (n *Node) Delete(key []byte, timeout time.Duration) error {
+	if err := n.admitDisk(); err != nil {
+		return err
+	}
 	return n.apply(command{Op: opDelete, Key: key}, timeout)
 }
 
@@ -193,5 +308,25 @@ func (n *Node) Shutdown() error {
 	if n.logStore != nil {
 		err = errors.Join(err, n.logStore.Close())
 	}
+	if n.directoryLock != nil {
+		err = errors.Join(err, n.directoryLock.Close())
+	}
 	return err
 }
+
+func (n *Node) RequestLimits() requestlimits.Limits {
+	if n.requestLimits == (requestlimits.Limits{}) {
+		return requestlimits.Defaults()
+	}
+	return n.requestLimits
+}
+
+// ClusterID is the operator-assigned identity used by this member transport.
+func (n *Node) ClusterID() string { return n.clusterID }
+
+func (n *Node) SnapshotFormatVersion() uint32 { return n.snapshotFormatVersion }
+
+func (n *Node) WALFormatVersion() uint32 { return n.walFormatVersion }
+
+func (n *Node) CommandFormatVersion() uint32 { return n.commandFormatVersion }
+func (n *Node) PeerProtocolVersion() string  { return peerProtocolFor(n.commandFormatVersion) }

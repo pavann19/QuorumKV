@@ -11,10 +11,17 @@ import (
 	"time"
 
 	"github.com/hashicorp/raft"
+	"github.com/pavann19/quorumkv/internal/diskhealth"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 func TestSnapshotInstallAndRestart(t *testing.T) {
+	for _, format := range []uint32{0, 1} {
+		t.Run(fmt.Sprint("format-", format), func(t *testing.T) { testSnapshotInstallAndRestart(t, format) })
+	}
+}
+func testSnapshotInstallAndRestart(t *testing.T, format uint32) {
 	listeners := make([]net.Listener, 3)
 	peers := make([]Peer, 3)
 	for i := range listeners {
@@ -34,7 +41,7 @@ func TestSnapshotInstallAndRestart(t *testing.T) {
 		cfg.TrailingLogs = 0
 		cfg.SnapshotInterval = time.Hour
 		var err error
-		nodes[i], err = newNode(peers[i], peers, filepath.Join(root, peers[i].ID), cfg)
+		nodes[i], err = newNodeTransport(peers[i], peers, filepath.Join(root, peers[i].ID), cfg, insecure.NewCredentials(), StartOptions{SnapshotFormatVersion: format, ClusterID: "snapshot-fixture", Bootstrap: true, BootstrapExpect: len(peers), DiskPolicy: diskhealth.Policy{MaxUsedPercent: 95, MinFreeBytes: 64 << 20}})
 		if err != nil {
 			t.Fatal(err)
 		}

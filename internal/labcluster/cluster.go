@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/pavann19/quorumkv/internal/diskhealth"
 	"github.com/pavann19/quorumkv/internal/identity"
 	"github.com/pavann19/quorumkv/internal/labpki"
 	"github.com/pavann19/quorumkv/internal/raftnode"
@@ -21,16 +22,23 @@ import (
 )
 
 type Cluster struct {
-	Root           string
-	Peers          []raftnode.Peer
-	Nodes          []*raftnode.Node
-	Servers        []*grpc.Server
-	Clients        []pb.KVClient
-	conns          []*grpc.ClientConn
-	identities     []*identity.Identity
-	ca             *labpki.CA
-	mtls           bool
-	clientIdentity *identity.Identity
+	Root                  string
+	clusterID             string
+	snapshotFormatVersion uint32
+	walFormatVersion      uint32
+	commandFormatVersion  uint32
+	readMode              string
+	raftSettings          raftnode.RaftSettings
+	extraServerOptions    []grpc.ServerOption
+	Peers                 []raftnode.Peer
+	Nodes                 []*raftnode.Node
+	Servers               []*grpc.Server
+	Clients               []pb.KVClient
+	conns                 []*grpc.ClientConn
+	identities            []*identity.Identity
+	ca                    *labpki.CA
+	mtls                  bool
+	clientIdentity        *identity.Identity
 }
 
 func New(parent string) (*Cluster, error) {
@@ -38,12 +46,36 @@ func New(parent string) (*Cluster, error) {
 }
 
 // NewMode permits a plaintext comparison only for self-created loopback fixtures.
-func NewMode(parent string, mtls bool) (*Cluster, error) {
+func NewMode(parent string, mtls bool) (*Cluster, error) { return newModeFormat(parent, mtls, 0) }
+
+func newModeFormat(parent string, mtls bool, format uint32) (*Cluster, error) {
+	return newModeReadProfile(parent, mtls, format, "quorum")
+}
+
+func newModeReadProfile(parent string, mtls bool, format uint32, readMode string) (*Cluster, error) {
+	return newModeRaftProfile(parent, mtls, format, readMode, raftnode.DefaultRaftSettings())
+}
+func newModeRaftProfile(parent string, mtls bool, format uint32, readMode string, settings raftnode.RaftSettings, extraOptions ...grpc.ServerOption) (*Cluster, error) {
+	return newModeStorageProfile(parent, mtls, format, 0, 0, readMode, settings, extraOptions...)
+}
+func newModeStorageProfile(parent string, mtls bool, format, walFormat, commandFormat uint32, readMode string, settings raftnode.RaftSettings, extraOptions ...grpc.ServerOption) (*Cluster, error) {
+	if walFormat > 1 || commandFormat > 1 || commandFormat == 1 && (walFormat != 1 || format != 1) {
+		return nil, errors.New("unsupported lab storage profile")
+	}
+	if err := settings.Validate(); err != nil {
+		return nil, err
+	}
+	if readMode != "quorum" && readMode != "barrier" {
+		return nil, errors.New("unsupported lab read mode")
+	}
+	if format > 1 {
+		return nil, errors.New("unsupported lab snapshot format")
+	}
 	root, err := os.MkdirTemp(parent, "quorumkv-disposable-")
 	if err != nil {
 		return nil, err
 	}
-	c := &Cluster{Root: root, mtls: mtls}
+	c := &Cluster{Root: root, clusterID: filepath.Base(root), mtls: mtls, snapshotFormatVersion: format, walFormatVersion: walFormat, commandFormatVersion: commandFormat, readMode: readMode, raftSettings: settings, extraServerOptions: append([]grpc.ServerOption(nil), extraOptions...)}
 	ok := false
 	defer func() {
 		if !ok {
@@ -98,7 +130,7 @@ func NewMode(parent string, mtls bool) (*Cluster, error) {
 			return nil, e
 		}
 		c.identities = append(c.identities, ident)
-		if e = c.start(i, listeners[i]); e != nil {
+		if e = c.start(i, listeners[i], true); e != nil {
 			return nil, e
 		}
 	}
@@ -131,18 +163,19 @@ func NewMode(parent string, mtls bool) (*Cluster, error) {
 	ok = true
 	return c, nil
 }
-func (c *Cluster) start(i int, lis net.Listener) error {
+func (c *Cluster) start(i int, lis net.Listener, bootstrap bool) error {
 	var n *raftnode.Node
 	var err error
 	if c.mtls {
-		n, err = raftnode.NewAuthenticated(c.Peers[i], c.Peers, filepath.Join(c.Root, c.Peers[i].ID), c.identities[i].ClientCredentials())
+		n, err = raftnode.NewAuthenticated(c.Peers[i], c.Peers, filepath.Join(c.Root, c.Peers[i].ID), c.identities[i].ClientCredentials(), raftnode.StartOptions{WALFormatVersion: c.walFormatVersion, CommandFormatVersion: c.commandFormatVersion, RaftSettings: c.raftSettings, ReadMode: c.readMode, SnapshotFormatVersion: c.snapshotFormatVersion, DiskPolicy: diskhealth.Policy{MaxUsedPercent: 95, MinFreeBytes: 64 << 20}, Bootstrap: bootstrap, BootstrapExpect: len(c.Peers), ClusterID: c.clusterID})
 	} else {
-		n, err = raftnode.New(c.Peers[i], c.Peers, filepath.Join(c.Root, c.Peers[i].ID))
+		n, err = raftnode.New(c.Peers[i], c.Peers, filepath.Join(c.Root, c.Peers[i].ID), raftnode.StartOptions{WALFormatVersion: c.walFormatVersion, CommandFormatVersion: c.commandFormatVersion, RaftSettings: c.raftSettings, ReadMode: c.readMode, SnapshotFormatVersion: c.snapshotFormatVersion, DiskPolicy: diskhealth.Policy{MaxUsedPercent: 95, MinFreeBytes: 64 << 20}, Bootstrap: bootstrap, BootstrapExpect: len(c.Peers), ClusterID: c.clusterID})
 	}
 	if err != nil {
 		return err
 	}
 	opts := []grpc.ServerOption{grpc.MaxRecvMsgSize(identity.MaxMessage), grpc.MaxSendMsgSize(identity.MaxMessage), grpc.MaxConcurrentStreams(128)}
+	opts = append(opts, c.extraServerOptions...)
 	if c.mtls {
 		opts = append(opts, grpc.Creds(c.identities[i].ServerCredentials()), grpc.ChainUnaryInterceptor(c.identities[i].Unary), grpc.ChainStreamInterceptor(c.identities[i].Stream))
 	}
@@ -185,7 +218,7 @@ func (c *Cluster) Restart(i int) error {
 	if err != nil {
 		return err
 	}
-	if err = c.start(i, lis); err != nil {
+	if err = c.start(i, lis, false); err != nil {
 		lis.Close()
 	}
 	return err

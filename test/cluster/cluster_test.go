@@ -67,7 +67,7 @@ func startCluster(t *testing.T, n int, basePort int) []*clusterNode {
 	dataRoot := t.TempDir()
 	for _, node := range nodes {
 		dataDir := filepath.Join(dataRoot, node.id)
-		cmd := exec.Command(binPath, "-id="+node.id, "-peers="+peerSpec, "-data-dir="+dataDir)
+		cmd := exec.Command(binPath, "-disk-watermark-percent=95", "-bootstrap", "-bootstrap-expect="+fmt.Sprint(len(nodes)), "-cluster-id=disposable-test", "-id="+node.id, "-peers="+peerSpec, "-data-dir="+dataDir)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Start(); err != nil {

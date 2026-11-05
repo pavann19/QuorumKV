@@ -10,8 +10,9 @@ StartLimitBurst=3
 Type=simple
 User=quorumkv
 Group=quorumkv
-ExecStart=/opt/quorumkv/quorumkv-node -id=node1 -peers=node1=10.20.0.11:7070,node2=10.20.0.12:7070,node3=10.20.0.13:7070 -data-dir=/var/lib/quorumkv/node1 -identity=/etc/quorumkv/node1.json -admin-addr=127.0.0.1:7071
+ExecStart=/opt/quorumkv/quorumkv-node -cluster-id=REPLACE_WITH_OPERATOR_CLUSTER_ID -id=node1 -peers=node1=10.20.0.11:7070,node2=10.20.0.12:7070,node3=10.20.0.13:7070 -data-dir=/var/lib/quorumkv/node1 -identity=/etc/quorumkv/node1.json -admin-addr=127.0.0.1:7071
 Restart=on-failure
+RestartPreventExitStatus=70
 RestartSec=5
 TimeoutStopSec=15
 KillSignal=SIGTERM
