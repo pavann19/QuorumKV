@@ -1,0 +1,31 @@
+syntax = "proto3";
+package quorumkv.storage.v1;
+option go_package = "github.com/pavann19/quorumkv/proto/storagepb";
+
+// The framed snapshot stream starts with one bounded header, followed by exactly
+// entry_count independently length-bounded entries. No recursive/gob list decode.
+message SnapshotHeader {
+  uint32 schema_version = 1;
+  string cluster_id = 2;
+  uint64 max_store_bytes = 3;
+  uint64 max_store_entries = 4;
+  uint64 entry_count = 5;
+  uint64 logical_bytes = 6;
+  uint64 last_command_index = 7;
+}
+message SnapshotEntry {
+  bytes key = 1;
+  bytes value = 2;
+}
+
+// Independently versioned committed Raft payload. Field numbers are append-only;
+// changing the interpretation requires an explicit storage/peer profile upgrade.
+message CommandEnvelope {
+  uint32 schema_version = 1;
+  string cluster_id = 2;
+  uint32 operation = 3; // 1 put, 2 delete; zero and unknown values refuse.
+  bytes key = 4;
+  bytes value = 5;
+  uint64 max_store_bytes = 6;
+  uint64 max_store_entries = 7;
+}

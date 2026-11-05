@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, 'publication/20261031']
+    branches: [main, 'publication/20261031', 'fix/reliability-hardening-20261103']
   pull_request:
 
 permissions:
@@ -41,7 +41,7 @@ jobs:
       - shell: bash
         run: |
           mapfile -t packages < <(go list ./... | grep -vE '(test/cluster|test/fault|/bench)')
-          go test "${packages[@]}" -v -race -timeout 60s
+          go test "${packages[@]}" -p=1 -v -race -timeout 60s
       - name: Check subprocess race reports
         if: always()
         shell: bash

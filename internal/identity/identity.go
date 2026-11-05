@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/pavann19/quorumkv/internal/requestlimits"
 	"io"
 	"net"
 	"os"
@@ -23,7 +24,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const MaxMessage = 4 << 20
+const MaxMessage = requestlimits.MaxMessageBytes
 
 type Config struct {
 	Certificate string            `json:"certificate"`

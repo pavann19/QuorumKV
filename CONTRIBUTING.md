@@ -4,7 +4,7 @@ Start with the [documentation index](docs/README.md), [verification status](docs
 
 ## Local workflow
 
-1. Branch from current `main` using `fix/`, `feat/` or `docs/` and a short descriptive suffix.
+1. Branch from current `main` using `fix/`, `feat/`, `test/` or `docs/` and a short descriptive suffix. Keep branch names, commit subjects and comments free of tool/model branding.
 2. Preserve unrelated work. Use synthetic fixtures and isolated stores; never reset shared data to make a test pass.
 3. Implement one coherent change with the meaningful regression and documentation it needs.
 4. Inspect staged content and `git diff --cached --check`. Stage explicit paths. Exclude secrets, personal data, runtime databases, model weights and bulk raw logs.

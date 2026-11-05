@@ -70,3 +70,14 @@ The retained 24h attempt failed after about 8h05m at supervisor checkpoint publi
 with WinError 5. Its precise Windows contention cause is unproven. No cumulative
 duration credit, completed endurance, production capacity or host resilience is claimed.
 The earlier intermittent delayed-network retry-exhaustion failure remains undiagnosed.
+
+## Complete WAL corruption
+
+Complete records with invalid CRCs, operation codes or structure now stop replay
+and startup with `wal.ErrCorrupt`. Preserve the entire affected member directory
+and investigate storage health; follow the isolated restore procedure above.
+Do not truncate, edit checksums or force quorum as an automatic repair. Healthy
+files retain the same wire format, and incomplete append tails remain repairable.
+Downgrading an affected file to a build that silently truncates corruption is unsafe.
+The length field is not itself checksummed, so this does not establish arbitrary
+corruption or power-loss recovery.

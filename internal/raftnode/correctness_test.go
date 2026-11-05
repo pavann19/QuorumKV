@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/raft"
+	"github.com/pavann19/quorumkv/internal/diskhealth"
 	"github.com/pavann19/quorumkv/internal/store"
 	pb "github.com/pavann19/quorumkv/proto/quorumkvpb"
 )
@@ -53,16 +54,18 @@ func TestIsolatedLeaderCannotServeGet(t *testing.T) {
 		cfg.HeartbeatTimeout = time.Second
 		cfg.ElectionTimeout = time.Second
 		cfg.LeaderLeaseTimeout = 500 * time.Millisecond
-		st, err := store.Open(filepath.Join(t.TempDir(), "store.wal"))
+		memberDir := t.TempDir()
+		st, err := store.Open(filepath.Join(memberDir, "store.wal"))
 		if err != nil {
 			t.Fatal(err)
 		}
 		logs := raft.NewInmemStore()
-		r, err := raft.NewRaft(cfg, &FSM{Store: st}, logs, logs, raft.NewInmemSnapshotStore(), tr)
+		fsm := &FSM{Store: st}
+		r, err := raft.NewRaft(cfg, fsm, logs, logs, raft.NewInmemSnapshotStore(), tr)
 		if err != nil {
 			t.Fatal(err)
 		}
-		node := &Node{Raft: r, Store: st}
+		node := &Node{Raft: r, fsm: fsm, readLogs: logs, Store: st, dataDir: memberDir, diskPolicy: diskhealth.Policy{MaxUsedPercent: 95, MinFreeBytes: 64 << 20}, diskProbe: diskhealth.Probe}
 		nodes = append(nodes, node)
 		t.Cleanup(func() { r.Shutdown().Error(); st.Close(); tr.Close() })
 		if err := r.BootstrapCluster(configuration).Error(); err != nil {

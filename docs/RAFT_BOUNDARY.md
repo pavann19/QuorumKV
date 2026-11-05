@@ -32,11 +32,10 @@ Raft protocol from scratch.
 - Dialing/framing behavior for RequestVote, AppendEntries, and InstallSnapshot
   traffic between Raft nodes.
 
-QuorumKV supports optional mutual TLS with operator-owned roots, certificate identities
-and peer allowlists. Plaintext mode is restricted to literal loopback addresses; legacy
-local fault scenarios use that mode. Separate mTLS tests exercise authenticated process
-traffic, so do not describe every proxy-fault scenario as TLS-tested. See
-[transport and recovery](TRANSPORT_AND_RECOVERY.md) for the current identity boundary.
+QuorumKV configures this transport for mTLS with operator-owned peer identities
+and exact address-to-URI binding. A separate plaintext loopback factory remains
+for synthetic tests. Multi-host operation and deployed trust management are not
+verified.
 
 ## Written in QuorumKV
 

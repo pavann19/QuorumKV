@@ -1,126 +1,103 @@
 # QuorumKV
 
-[Documentation index](docs/README.md) | [Verified baseline and remaining limits](docs/VERIFICATION.md)
+A Go replicated key-value service built to answer a practical backend question:
+**what can a client safely conclude when a write times out or a replica fails?**
 
-A Go key-value store with Raft replication, a local write-ahead log, and a
-process-based fault-injection harness. The project focuses on recovery behavior,
-read consistency, and tests that expose failures across replica boundaries.
+QuorumKV combines a custom write-ahead log and state-machine adapter with
+HashiCorp Raft. Its fault harness records individual RPC attempts, including
+uncertain writes, and checks observed histories against a sequential KV model.
+It is a locally validated portfolio project, with no production operating claim.
 
-HashiCorp Raft provides consensus. The implementation here covers the WAL, store,
-FSM adapter, client-facing gRPC service, fault proxies, history recording, and
-test workloads. See the [ownership boundary](docs/RAFT_BOUNDARY.md) for the split
-between project code and dependencies.
+## What I built
 
-## Verification
+- **Durable local state:** CRC-framed WAL, sync before acknowledgement, bounded
+  replay, incomplete-tail repair and refusal of complete corrupt records.
+- **Replication integration:** committed-command application, quorum-backed reads
+  fenced on completed FSM application, snapshot installation and restart.
+- **Service boundaries:** mTLS peer/client identity and method permissions,
+  bounded requests, conservative client retries and explicit uncertain outcomes.
+- **Failure evidence:** process kills, directed network partitions, lost replies,
+  exact snapshot-state checks and known-invalid history controls.
 
-The [hosted CI](https://github.com/pavann19/QuorumKV/actions/runs/41203948838)
-and [Linux/Windows diagnostics](https://github.com/pavann19/QuorumKV/actions/runs/41203948781)
-passed for runtime revision `0d13601` on 1 November 2026. These cover build, vet,
-race-instrumented child processes, cluster/fault scenarios, separate measurements
-and checkpoint recovery regressions. Each later PR must pass its own checks.
+HashiCorp Raft supplies consensus, BoltDB persists its log/stable state, and
+Jille supplies the peer gRPC transport. The [ownership boundary](docs/RAFT_BOUNDARY.md)
+separates those dependencies from this project's engineering.
 
-[CI passed on main](https://github.com/pavann19/QuorumKV/actions/runs/40066244588)
-for commit `9ca520e` on 2026-10-24. Build, vet, race checks, cluster/fault tests,
-vulnerability scanning, and the separate benchmark job passed. A fresh local
-clone also passed the documented correctness run. The
-[verification report](docs/CORRECTNESS_CHECKS.md) records the tested commits,
-environment, reproduced bugs, and limits of those checks.
+## Architecture
 
-| Area | Implemented behavior | Evidence |
-| --- | --- | --- |
-| Local durability | CRC-framed WAL, fsync before acknowledgment, repaired tails on reopen | Unit tests and 100 subprocess kill/recovery trials |
-| Replication | Static cluster configuration, replicated Put/Delete, snapshot/restore adapter | Three-process election, replication, and leader-kill tests |
-| Reads | Commit and await a Raft barrier before reading local state | Healthy-read, cancellation, and isolated-leader regression tests |
-| Storage failures | Reject further WAL writes after I/O failure; stop a replica if a committed mutation cannot be applied | WAL and FSM regression tests |
-| Fault testing | Directed-edge partitions, rolling restarts, delayed traffic, and a double-leader attempt | Five scenarios checked with Porcupine; known-invalid histories test the checker |
-
-The crash test checks that acknowledged writes survive a process kill and allows
-one additional record whose fsync may finish before acknowledgment is observed.
-It does not test machine power loss. Passing fault scenarios means the recorded
-histories were accepted by the model, not that every possible execution has been
-proved linearizable.
-
-## Recorded Measurements
-
-The JSON under [bench/results](bench/results/) records localhost runs from
-2026-09-18, before the October hardening changes:
-
-| Workload | Samples | Recorded result |
-| --- | ---: | --- |
-| Three-node leader-kill failover | 10 | p50 2.106 s; p90 2.458 s |
-| Three-node sequential Put latency | 100 | p50 4.295 ms |
-| Five-node sequential Put latency | 100 | p50 6.586 ms |
-
-Write measurements use one client with one request in flight. The reported
-operations per second are inverse sequential latency, not a concurrent throughput
-limit. These files are historical local measurements; the successful hosted
-benchmark run has its own artifacts in CI. Neither is a production capacity claim.
-
-## Run Locally
-
-Use Go 1.27.3 or newer and free localhost ports for the test clusters.
-
-```bash
-go test ./... -count=1
+```mermaid
+flowchart LR
+  C[Client] --> A[mTLS and bounded gRPC API]
+  A --> R[HashiCorp Raft quorum]
+  R --> F[QuorumKV FSM adapter]
+  F --> W[Custom WAL: append and sync]
+  W --> K[In-memory KV state]
+  H[Fault harness] --> C
+  H --> P[Peer network proxies]
+  P --> R
+  H --> V[Attempt history and Porcupine checker]
 ```
 
-The suite starts real child processes for crash recovery, cluster tests, and fault
-scenarios. Use `-short` to skip those slower checks. The
-[demo guide](docs/DEMO.md) includes the fault-only run and race-check setup.
+The separate diagnostics worker consumes bounded evidence outside the request
+and consensus paths. It cannot authorize membership, trust or storage changes.
 
-Measurements are opt-in and excluded from ordinary tests:
+## Reproduce the portfolio demo
 
-```bash
-go test -tags=bench ./bench -run TestMeasure -count=1
+Prerequisites: Go 1.27.3 or newer, writable temporary storage, and free localhost
+ports. The tests create disposable synthetic data and stop their own processes.
+No Docker, cloud account, model download or existing database is required.
+
+```sh
+go test ./test/crashrecovery ./internal/raftnode ./test/securecluster ./test/fault -run '^(TestCrashRecovery_100Trials|TestSnapshotInstallAndRestart|TestProcessMTLSKillLeaderAndRotation|TestRecorderPreservesAppliedWriteWithLostReply|TestChecker_.*)$' -p=1 -count=1 -timeout=180s -v
 ```
 
-## Scope and Limits
+This demonstrates 100 acknowledged-prefix crash trials, exact snapshot recovery,
+authenticated process failover and a committed write whose reply is lost. It
+also runs controls that reject invalid histories. It is a short validation demo,
+not a benchmark. See the [walkthrough](docs/PORTFOLIO_DEMO.md) for expected output
+and the [evidence summary](docs/PORTFOLIO_EVIDENCE.md) for the latest run status.
 
-This is a local demonstration and test project. Replicated nodes support
-operator-configured mTLS and method authorization. Without an identity file,
-plaintext mode is restricted to literal loopback addresses; remote plaintext
-deployments must provision identities before upgrading. Trust roots and client
-allowlists are fixed for a process lifetime. Cluster membership is static. See
-the transport guide below for compatibility and remaining identity limits.
-Current hosted coverage includes Linux and Windows diagnostics; macOS has not
-been verified. Process recovery and checkpoint tests do not prove host resilience.
+## Engineering decisions worth discussing
 
-The project has not been operated in production. Arbitrary disk corruption,
-power-loss durability, large-scale load, and sustained multi-host operation are
-outside the verified scope. Read barriers add quorum traffic and log entries.
-Committed storage failures stop the affected process and require working storage
-before restart.
+| Decision | Why it matters |
+|---|---|
+| Preserve uncertain writes | A timeout cannot establish that a submitted mutation failed; hiding it weakens the checker. |
+| Fence reads on completed application | Being leader or dispatching a committed command does not establish that its value is visible. Default quorum reads do not append to the Raft log. |
+| Stop on committed storage failure | An FSM error cannot undo a consensus commit; continuing could serve divergent state. |
+| Compare exact restored state | Key counts alone miss wrong values, undeleted keys and stale local state. |
 
-The current candidate passed bounded local build, vet, functional and targeted
-race checks, plus 22 diagnostics/checkpoint tests after the documented fixed-fixture
-compilation step. The retained endurance attempt
-failed after about eight hours; checkpoint repair tests do not establish a
-completed 24-hour run. The checkpoint publication defect is repaired with unique
-temporary files and bounded sharing retries; its original failed run remains failed.
+Read the [case study and resume bullets](docs/PORTFOLIO.md),
+[claim map](docs/CLAIM_MAP.md) and [design decisions](docs/DECISIONS.md).
 
-## Code and Design
+## Validation and limits
 
-- `internal/wal`, `internal/store`: local durability and state management.
-- `internal/kv`, `internal/raftnode`: standalone and replicated gRPC services.
-- `internal/faultproxy`, `test/fault`: directed-edge proxies, workloads, and history checking.
-- `test/cluster`, `test/crashrecovery`: process-level replication and recovery tests.
-- `bench`: separate failover and sequential write measurements.
-- `cmd`: standalone server, replicated server, and crash-test writer.
+Candidate validation is local. Earlier hosted CI belongs to the commits recorded
+in the [historical verification report](docs/CORRECTNESS_CHECKS.md); it does not
+certify this candidate. Passing histories describe recorded finite
+executions, and process kills do not test hardware power loss.
 
-[Design decisions](docs/DECISIONS.md) describe the implementation trade-offs.
-[Engineering notes](docs/ENGINEERING_NOTES.md) connect implementation choices
-to regression evidence and verification limits.
+Membership is static. There is no verified multi-host availability, sustained
+capacity, successful 24-hour endurance run or production deployment. Historical
+and experimental performance results are not speedup claims: the optional
+larger replication batch failed its read-tail gate, so the default remains one
+entry. See [replication batching](docs/REPLICATION_BATCHING.md).
 
+Unfinished receipt-aware journal, command and snapshot experiments are excluded
+from this curated candidate and preserved separately in the development workspace.
+The public API does not offer exactly-once writes or safe retries of uncertain
+mutations. Supported format migration covers KV profiles 0/1 only.
+See [candidate scope](docs/CANDIDATE_SCOPE.md).
 
-Transport and recovery changes: [interfaces, compatibility and limits](docs/TRANSPORT_AND_RECOVERY.md).
+## Explore the code
 
-Bounded lab supervision: [checkpoint recovery and limits](docs/LAB_CHECKPOINTS.md).
+| Area | Source |
+|---|---|
+| WAL and state ownership | [internal/wal](internal/wal/), [internal/store](internal/store/) |
+| Replication, read fencing and snapshots | [internal/raftnode](internal/raftnode/) |
+| Identity and first-party client | [internal/identity](internal/identity/), [client](client/) |
+| Failure harness and history model | [test/fault](test/fault/), [internal/faultproxy](internal/faultproxy/) |
+| Process recovery and authenticated failover | [test/crashrecovery](test/crashrecovery/), [test/securecluster](test/securecluster/) |
+| Separate diagnostics worker | [diagnostics](diagnostics/) |
 
-## License
-
-Original project code is licensed under [Apache-2.0](LICENSE). Dependency licenses,
-including the adopted Raft components, are retained in [third-party notices](THIRD_PARTY_NOTICES.txt).
-
-## Contributing and maintenance
-
-See [contributing](CONTRIBUTING.md), [maintenance rules](MAINTAINING.md) and [security reporting](SECURITY.md). Changes reach `main` through reviewed PRs and required checks.
+The [full demo guide](docs/DEMO.md) includes the broader checks and opt-in
+measurement procedure. Performance measurements remain separate from correctness.

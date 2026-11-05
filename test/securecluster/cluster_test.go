@@ -23,11 +23,17 @@ func TestProcessMTLSKillLeaderAndRotation(t *testing.T) {
 		t.Skip("multi-process synthetic fixture")
 	}
 	root := t.TempDir()
-	binary := filepath.Join(root, "node.exe")
-	build := exec.Command("go", "build", "-o", binary, "../../cmd/quorumkv-node")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build %v %s", err, out)
+	binary := os.Getenv("QUORUMKV_NODE_BINARY")
+	if binary == "" {
+		binary = filepath.Join(root, "node.exe")
+		build := exec.Command("go", "build", "-o", binary, "../../cmd/quorumkv-node")
+		if out, err := build.CombinedOutput(); err != nil {
+			t.Fatalf("build %v %s", err, out)
+		}
+	} else if info, err := os.Stat(binary); err != nil || info.IsDir() {
+		t.Fatalf("precompiled owned-fixture executable invalid: %v", err)
 	}
+
 	// Validate the real executable refuses exposure before opening a data store.
 	deniedPath := filepath.Join(root, "must-not-exist")
 	denied := exec.Command(binary, "-id=node0", "-peers=node0=0.0.0.0:19099", "-data-dir="+deniedPath)
@@ -72,7 +78,7 @@ func TestProcessMTLSKillLeaderAndRotation(t *testing.T) {
 	}
 	launch := func(i int) {
 		p := c.Peers[i]
-		cmd := exec.Command(binary, "-id="+p.ID, "-peers="+spec, "-data-dir="+filepath.Join(c.Root, p.ID), "-identity="+filepath.Join(c.Root, p.ID+"-identity.json"), "-admin-addr="+admin[i])
+		cmd := exec.Command(binary, "-disk-watermark-percent=95", "-cluster-id="+filepath.Base(c.Root), "-id="+p.ID, "-peers="+spec, "-data-dir="+filepath.Join(c.Root, p.ID), "-identity="+filepath.Join(c.Root, p.ID+"-identity.json"), "-admin-addr="+admin[i])
 		log, e := os.OpenFile(filepath.Join(root, fmt.Sprintf("node%d.log", i)), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 		if e != nil {
 			t.Fatal(e)

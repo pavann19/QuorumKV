@@ -154,7 +154,7 @@ func Start(t *testing.T, n int, basePort int) *Cluster {
 			}
 		}
 		dataDir := filepath.Join(dataRoot, id)
-		cmd := exec.Command(binPath, "-id="+id, "-peers="+peerSpec, "-data-dir="+dataDir)
+		cmd := exec.Command(binPath, "-disk-watermark-percent=95", "-bootstrap", "-bootstrap-expect="+fmt.Sprint(n), "-cluster-id=disposable-test", "-id="+id, "-peers="+peerSpec, "-data-dir="+dataDir)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Start(); err != nil {
@@ -197,7 +197,7 @@ func (c *Cluster) Restart(id string, dataDir string, peerSpec string) {
 		if n.ID != id {
 			continue
 		}
-		cmd := exec.Command(binPath, "-id="+id, "-peers="+peerSpec, "-data-dir="+dataDir)
+		cmd := exec.Command(binPath, "-disk-watermark-percent=95", "-cluster-id=disposable-test", "-id="+id, "-peers="+peerSpec, "-data-dir="+dataDir)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Start(); err != nil {

@@ -19,3 +19,15 @@ Benchmarks can replace files at documented output paths. Preserve artifacts befo
 See the [demo](DEMO.md) for artifact locations and [verification status](VERIFICATION.md) for exact hosted revisions and the failed historical soak. No new long soak was run for this documentation refresh.
 
 CI also runs a digest-pinned Gitleaks scan of reachable Git history. Secret scanning complements tests; it is not proof that every possible sensitive value can be detected.
+
+## Source-pinned local receipts
+
+Run `python -B scripts/run_checks.py` for functional, vet and diagnostics receipts.
+Use `--race` to instrument Go tests and child builds (a compatible C compiler is
+required), and `--measurements` for optional finite benchmarks. On Windows set
+`CC` and the compiler directory in the invoking process environment as needed.
+The runner pins the effective Go executable, records source/workflow/service
+hashes and rejects source drift. It explicitly excludes Go packages under fault
+and benchmark results directories so archived source is preserved without being
+executed as the current candidate. Inspect `manifest.json` and per-command logs
+in the new ignored evidence directory. No long soak is launched by this runner.
