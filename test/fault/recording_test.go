@@ -106,15 +106,24 @@ func TestDeleteAndLateRetryControls(t *testing.T) {
 }
 
 func TestRecorderPreservesAppliedWriteWithLostReply(t *testing.T) {
+	checkAppliedWritesWithLostReplies(t, 1, "lost_reply")
+}
+
+func TestRecorderPreservesMultipleAppliedWritesWithLostReplies(t *testing.T) {
+	checkAppliedWritesWithLostReplies(t, 2, "lost_replies")
+}
+
+func checkAppliedWritesWithLostReplies(t *testing.T, suppressed int32, artifact string) {
+	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "store.wal"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	var first atomic.Bool
+	var applied atomic.Int32
 	server := grpc.NewServer(grpc.UnaryInterceptor(func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		response, err := handler(ctx, req)
-		if err == nil && strings.HasSuffix(info.FullMethod, "/Put") && first.CompareAndSwap(false, true) {
+		if err == nil && strings.HasSuffix(info.FullMethod, "/Put") && applied.Add(1) <= suppressed {
 			<-ctx.Done()
 			return nil, ctx.Err()
 		}
@@ -140,8 +149,25 @@ func TestRecorderPreservesAppliedWriteWithLostReply(t *testing.T) {
 		t.Fatal(err)
 	}
 	history := r.History()
-	if len(history) != 3 || history[0].Outcome != "uncertain" || history[1].Attempt != 2 || !history[1].Acknowledged || history[0].OperationID != history[1].OperationID {
-		t.Fatalf("lost attempts: %+v", history)
+	if len(history) < int(suppressed)+2 || applied.Load() < suppressed+1 {
+		t.Fatalf("missing applied reply losses or acknowledged retry: %+v", history)
 	}
-	CheckAndCommit(t, "lost_reply", history)
+	mutations := history[:len(history)-1]
+	for i, op := range mutations {
+		if op.Kind != "put" || op.Key != "k" || op.Value != "v" || op.Attempt != i+1 || op.OperationID != mutations[0].OperationID {
+			t.Fatalf("retry metadata or payload changed: %+v", history)
+		}
+		if i == len(mutations)-1 {
+			if !op.Acknowledged || op.Outcome != "acknowledged" {
+				t.Fatalf("missing acknowledged retry: %+v", history)
+			}
+		} else if op.Acknowledged || op.Outcome != "uncertain" || op.Err == "" {
+			t.Fatalf("lost or misclassified uncertain attempt: %+v", history)
+		}
+	}
+	read := history[len(history)-1]
+	if read.Kind != "get" || !read.Acknowledged || !read.Found || read.GotValue != "v" || read.OperationID == mutations[0].OperationID {
+		t.Fatalf("missing independent readback: %+v", history)
+	}
+	CheckAndCommit(t, artifact, history)
 }
