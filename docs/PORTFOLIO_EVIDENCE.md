@@ -1,4 +1,4 @@
-# Portfolio evidence - 5 November 2026
+# Case study evidence - 5 November 2026
 
 Status: PASS_LOCAL_LINUX_FULL_RACE for the curated candidate on 5 November 2026.
 All 191 top-level Go checks passed with no skips, including the 100 populated

@@ -6,7 +6,7 @@ A Go replicated key-value service built to answer a practical backend question:
 QuorumKV combines a custom write-ahead log and state-machine adapter with
 HashiCorp Raft. Its fault harness records individual RPC attempts, including
 uncertain writes, and checks observed histories against a sequential KV model.
-It is a locally validated portfolio project, with no production operating claim.
+It is a locally validated case study project, with no production operating claim.
 
 ## What I built
 
@@ -41,7 +41,7 @@ flowchart LR
 The separate diagnostics worker consumes bounded evidence outside the request
 and consensus paths. It cannot authorize membership, trust or storage changes.
 
-## Reproduce the portfolio demo
+## Reproduce the case study demo
 
 Prerequisites: Go 1.27.3 or newer, writable temporary storage, and free localhost
 ports. The tests create disposable synthetic data and stop their own processes.

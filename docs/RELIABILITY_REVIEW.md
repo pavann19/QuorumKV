@@ -95,7 +95,7 @@ bounded review.
 
 Run `python -B scripts/run_checks.py` for source-pinned functional,
 vet, Python, targeted race and measurement receipts. Child-process race reports
-are checked separately. See the [current portfolio evidence](PORTFOLIO_EVIDENCE.md)
+are checked separately. See the [current case study evidence](PORTFOLIO_EVIDENCE.md)
 for the exact review receipt and outcome; old receipts remain historical.
 
 Useful primary references for the review criteria:
