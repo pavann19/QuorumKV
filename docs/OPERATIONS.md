@@ -2,7 +2,7 @@
 
 The continuation implementation is a local lab candidate. Deployment, hosted CI,
 host-level HA, power-loss durability and a completed 24-hour run require their
-own evidence. Consult `docs/PORTFOLIO_EVIDENCE.md` for current candidate outcomes.
+own evidence. Consult `docs/CASE_STUDY_EVIDENCE.md` for current candidate outcomes.
 
 ## Preflight and effective configuration
 

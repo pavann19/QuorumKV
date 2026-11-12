@@ -1,6 +1,6 @@
 # Source-to-evidence claim map
 
-The [case study evidence summary](PORTFOLIO_EVIDENCE.md) records the freshly run
+The [case study evidence summary](CASE_STUDY_EVIDENCE.md) records the freshly run
 short demo and its source boundaries. Other rows identify implementation and
 regression coverage, not a claim that every check ran in that selection.
 Historical measurements retain their original source and environment scope.

@@ -29,7 +29,7 @@ rather than implementing consensus from scratch.
   an applied write with a lost reply alongside authenticated leader-kill recovery.
 
 These are bounded local validation claims. The fresh run and source references
-are in [PORTFOLIO_EVIDENCE.md](PORTFOLIO_EVIDENCE.md). The 100 trials are iterations
+are in [CASE_STUDY_EVIDENCE.md](CASE_STUDY_EVIDENCE.md). The 100 trials are iterations
 within one test. Avoid substituting total test counts for engineering impact.
 
 ## Interview walkthrough
@@ -78,6 +78,6 @@ and are excluded from this candidate and its resume claims. Static membership, n
 no successful 24-hour run, no physical power-loss validation and no production
 operation remain explicit limitations. Historical hosted CI is not current-candidate CI.
 
-Run the [short walkthrough](PORTFOLIO_DEMO.md) before an interview. Use the
+Run the [short walkthrough](CASE_STUDY_DEMO.md) before an interview. Use the
 [ownership boundary](RAFT_BOUNDARY.md) and [claim map](CLAIM_MAP.md) to answer
 which behavior comes from project code, dependencies and direct observation.
