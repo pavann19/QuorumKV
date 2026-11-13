@@ -43,7 +43,7 @@ and consensus paths. It cannot authorize membership, trust or storage changes.
 
 ## Reproduce the portfolio demo
 
-Prerequisites: Go 1.27.3 or newer, writable temporary storage, and free localhost
+Prerequisites: Go 1.27.4 or newer, writable temporary storage, and free localhost
 ports. The tests create disposable synthetic data and stop their own processes.
 No Docker, cloud account, model download or existing database is required.
 

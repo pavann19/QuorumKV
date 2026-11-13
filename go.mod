@@ -1,6 +1,6 @@
 module github.com/pavann19/quorumkv
 
-go 1.27.3
+go 1.27.4
 
 require (
 	github.com/Jille/raft-grpc-transport v1.6.1

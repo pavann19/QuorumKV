@@ -5,7 +5,7 @@ external dependencies beyond Go modules.
 
 ## Prerequisites
 
-- Go 1.27.3 or newer, matching `go.mod`.
+- Go 1.27.4 or newer, matching `go.mod`.
 - A Windows or Linux shell with free localhost ports in the ranges used by the tests.
   macOS execution is not verified by the recorded CI evidence.
 
