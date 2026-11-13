@@ -1,4 +1,4 @@
-# Portfolio evidence - 5 November 2026
+# Case study evidence - 5 November 2026
 
 Status: PASS_LOCAL_LINUX_FULL_RACE for the curated candidate on 5 November 2026.
 All 191 top-level Go checks passed with no skips, including the 100 populated
@@ -35,7 +35,7 @@ application/test modules; this is source attribution, not binary-release clearan
 | Lost replies remain uncertain | [recorder](../test/fault/recording.go), [controls](../test/fault/recording_test.go), [model](../test/fault/model_test.go) | Finite observed histories, not universal linearizability or exactly-once writes. |
 | Authenticated leader failure | [process test](../test/securecluster/cluster_test.go), [identity](../internal/identity/identity.go) | Disposable localhost PKI/processes; no host failure-domain or deployed CA claim. |
 
-The [demo command](PORTFOLIO_DEMO.md) reproduces this selection. Raw run receipts
+The [demo command](CASE_STUDY_DEMO.md) reproduces this selection. Raw run receipts
 remain local/private, including source hashes, commands, exit status and failed
 attempts. This portable summary links to source rather than machine-specific
 artifact paths. Publication must include these source files to make the commands

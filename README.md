@@ -6,7 +6,7 @@ A Go replicated key-value service built to answer a practical backend question:
 QuorumKV combines a custom write-ahead log and state-machine adapter with
 HashiCorp Raft. Its fault harness records individual RPC attempts, including
 uncertain writes, and checks observed histories against a sequential KV model.
-It is a locally validated portfolio project, with no production operating claim.
+It is a locally validated case study project, with no production operating claim.
 
 ## What I built
 
@@ -41,7 +41,7 @@ flowchart LR
 The separate diagnostics worker consumes bounded evidence outside the request
 and consensus paths. It cannot authorize membership, trust or storage changes.
 
-## Reproduce the portfolio demo
+## Reproduce the case study demo
 
 Prerequisites: Go 1.27.4 or newer, writable temporary storage, and free localhost
 ports. The tests create disposable synthetic data and stop their own processes.
@@ -54,8 +54,8 @@ go test ./test/crashrecovery ./internal/raftnode ./test/securecluster ./test/fau
 This demonstrates 100 acknowledged-prefix crash trials, exact snapshot recovery,
 authenticated process failover and a committed write whose reply is lost. It
 also runs controls that reject invalid histories. It is a short validation demo,
-not a benchmark. See the [walkthrough](docs/PORTFOLIO_DEMO.md) for expected output
-and the [evidence summary](docs/PORTFOLIO_EVIDENCE.md) for the latest run status.
+not a benchmark. See the [walkthrough](docs/CASE_STUDY_DEMO.md) for expected output
+and the [evidence summary](docs/CASE_STUDY_EVIDENCE.md) for the latest run status.
 
 ## Engineering decisions worth discussing
 
@@ -66,7 +66,7 @@ and the [evidence summary](docs/PORTFOLIO_EVIDENCE.md) for the latest run status
 | Stop on committed storage failure | An FSM error cannot undo a consensus commit; continuing could serve divergent state. |
 | Compare exact restored state | Key counts alone miss wrong values, undeleted keys and stale local state. |
 
-Read the [case study and resume bullets](docs/PORTFOLIO.md),
+Read the [case study and resume bullets](docs/CASE_STUDY.md),
 [claim map](docs/CLAIM_MAP.md) and [design decisions](docs/DECISIONS.md).
 
 ## Validation and limits

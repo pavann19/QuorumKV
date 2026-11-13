@@ -1,4 +1,4 @@
-# Portfolio demo: recovery, uncertainty and authenticated failover
+# Case study demo: recovery, uncertainty and authenticated failover
 
 Use synthetic local fixtures; no existing service or data directory is needed.
 Install Go 1.27.4 or newer and allow loopback traffic. Leave enough free temporary
@@ -6,7 +6,7 @@ storage for builds and WAL files. The owned lab refuses writes above its 95%
 disk watermark; free space outside this task rather than raising the gate.
 A first build can take longer than the demo, depending on dependency/cache state.
 
-From the repository root, run the command in [README](../README.md#reproduce-the-portfolio-demo).
+From the repository root, run the command in [README](../README.md#reproduce-the-case-study-demo).
 Use a POSIX shell or PowerShell; both accept the quoted test expression. Do not
 add `-short`, which skips the process fixtures. Go downloads dependencies/toolchain
 when they are not already installed; the demo itself needs no external service.
@@ -32,7 +32,7 @@ from these checks. Passing a known-invalid control means the checker rejected
 the bad history, not that the bad execution was accepted.
 
 The original [broader demo](DEMO.md) covers all five partition/restart scenarios
-and optional measurements. The short portfolio selection is not the full suite.
+and optional measurements. The short case study selection is not the full suite.
 
 ## Common setup issues
 

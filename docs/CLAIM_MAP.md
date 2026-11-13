@@ -1,6 +1,6 @@
 # Source-to-evidence claim map
 
-The [portfolio evidence summary](PORTFOLIO_EVIDENCE.md) records the freshly run
+The [case study evidence summary](CASE_STUDY_EVIDENCE.md) records the freshly run
 short demo and its source boundaries. Other rows identify implementation and
 regression coverage, not a claim that every check ran in that selection.
 Historical measurements retain their original source and environment scope.
@@ -26,7 +26,7 @@ Do not describe consensus as implemented from scratch or describe short local
 throughput results as sustained production capacity. Do not infer monthly
 availability, a speedup, production readiness or hosted CI from these runs.
 
-## Current portfolio boundary
+## Current case study boundary
 
 Default reads use a fresh quorum and a completed-FSM fence; they do not append
 Raft log entries. Barrier mode is an explicit comparison option. Receipt-aware

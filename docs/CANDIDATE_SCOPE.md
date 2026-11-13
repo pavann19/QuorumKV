@@ -1,4 +1,4 @@
-# Portfolio candidate scope
+# Case study candidate scope
 
 This candidate includes the supported KV service: WAL/snapshot/command profiles
 0/1, authenticated client/peer boundaries, quorum read fencing, bounded requests,
