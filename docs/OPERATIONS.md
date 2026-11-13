@@ -8,7 +8,7 @@ own evidence. Consult `docs/CASE_STUDY_EVIDENCE.md` for current candidate outcom
 
 1. Preserve the dirty checkout. Read `AI_CONTINUE_HERE.md` and the phase evidence.
    The original baseline is a preservation snapshot, not a reset target.
-2. Use Go 1.27.3 and Python 3.11+ standard library. Run
+2. Use Go 1.27.4 and Python 3.11+ standard library. Run
    `python -B scripts/run_checks.py`. It records the exact toolchain,
    source hashes, reconciled edits, commands, raw outcomes and drift checks.
 3. Run `python -B scripts/run_lab.py --profile smoke --seconds 60`.

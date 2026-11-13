@@ -1,7 +1,7 @@
 # Case study demo: recovery, uncertainty and authenticated failover
 
 Use synthetic local fixtures; no existing service or data directory is needed.
-Install Go 1.27.3 or newer and allow loopback traffic. Leave enough free temporary
+Install Go 1.27.4 or newer and allow loopback traffic. Leave enough free temporary
 storage for builds and WAL files. The owned lab refuses writes above its 95%
 disk watermark; free space outside this task rather than raising the gate.
 A first build can take longer than the demo, depending on dependency/cache state.
