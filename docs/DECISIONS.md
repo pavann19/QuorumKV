@@ -209,18 +209,7 @@ not a cherry-picked number" discipline used for ModelGate's admission latency be
 **Failover time** (`bench/failover_test.go`): 10 independent trials, each a fresh 3-node cluster —
 kill the leader, time from that kill to the moment a write succeeds again on the majority side.
 
-| Percentile | Time |
-|---|---|
-| min | 1440 ms |
-| p50 | 2006 ms |
-| p90 | 2576 ms |
-| max | 3233 ms |
-| mean | 2135 ms |
-
-This is dominated by hashicorp/raft's default election timeout randomization (150-300ms range) plus
-the time for the killed leader's TCP connections to actually be torn down and detected by its
-former followers — it is a measurement of *this configuration's* real behavior, not a claim about
-what Raft can theoretically achieve with tuned timeouts.
+The previously quoted narrative table (2.006 s p50 / 2.576 s p90) did not identify a matching raw receipt. It is superseded here by the explicitly linked [historical October 26 evidence](HISTORICAL_MEASUREMENTS.md): ten three-process localhost trials, conventional median **1.995 s** and p90 **2.429 s**. This is a separate experiment from `bench/results/failover_time.json`; do not combine their statistics. The raw October file's `p50_ms` uses a lower order statistic rather than the conventional even-sample median. The evidence guide explains both calculations and the measurement boundary.
 
 **Throughput/latency at cluster sizes 3 and 5** (`bench/throughput_test.go`): 100 sequential `Put`s
 against the leader of a healthy cluster.

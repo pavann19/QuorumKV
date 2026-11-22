@@ -44,3 +44,7 @@ usable. A documentation pass is not a secret/history/license release audit.
 Earlier measurements and hosted checks retain their historical source scope.
 Unfinished receipt-aware experiments are excluded from the candidate and
 these claims. Product performance/endurance gates remain incomplete.
+
+## Historical October 26 experiments
+
+The matching receipts for 1.995 s median / 2.429 s p90 failover, 607 RPC attempts and 2,304 concurrent writes are now published with an arithmetic verifier and Porcupine replay test. See [historical measurement evidence](HISTORICAL_MEASUREMENTS.md) for original revision, environment, samples, provenance and limits. These bounded local experiments are separate from the other runs described above.

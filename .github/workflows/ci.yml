@@ -35,6 +35,8 @@ jobs:
         run: echo "GORACE=log_path=$RUNNER_TEMP/quorumkv-race halt_on_error=1" >> "$GITHUB_ENV"
       - run: go build ./...
       - run: go vet ./...
+      - name: Verify historical measurement receipts
+        run: python3 scripts/verify_historical_measurements.py
       # Fast, deterministic unit/integration tests. test/cluster and test/fault
       # spawn real multi-process clusters and take real wall time; bench/ is
       # build-tagged and runs only in its own measurement job below.
