@@ -1,0 +1,1 @@
+{"timestamp":"2026-10-26T10:12:04.7058032Z","sample_size":10,"min_ms":1564.608,"p50_ms":1969.487,"p90_ms":2429.314,"max_ms":2585.081,"mean_ms":2067.3008999999997,"samples_ms":[1564.608,1815.262,1919.349,1920.72,1969.487,2019.568,2021.367,2428.253,2429.314,2585.081],"environment":"3-process cluster on localhost, no kind/kubelet/container overhead"}

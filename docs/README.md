@@ -8,6 +8,7 @@ Start with the [project overview](../README.md) and [verification status](VERIFI
 - [RAFT BOUNDARY](RAFT_BOUNDARY.md)
 - [TRANSPORT AND RECOVERY](TRANSPORT_AND_RECOVERY.md)
 - [TESTING](TESTING.md)
+- [Historical failover, fault and concurrency evidence](HISTORICAL_MEASUREMENTS.md)
 - [Authorization and fault-harness fixes](AUTHORIZATION_AND_HARNESS.md)
 - [DEMO](DEMO.md)
 - [CORRECTNESS CHECKS](CORRECTNESS_CHECKS.md)

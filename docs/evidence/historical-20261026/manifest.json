@@ -1,0 +1,25 @@
+{
+  "source_revision": "ec6c8cc72fd1c64d62dd8ba00d28d36095355c54+working-tree",
+  "scope": "Historical bounded local experiments; not current-source or production measurements",
+  "transformation": "JSON whitespace compacted; nonempty RPC err strings replaced with recorded RPC error; logical_cpus omitted. Other fields retained. Original SHA256 values identify preserved private receipts.",
+  "original_sha256": {
+    "failover_time.json": "a6094c60e7eeeb486b801cb8e7a69d1dab9f96871e7fe64c7b1be67312e9d06d",
+    "concurrent_candidate.json": "cd66e2d64033300b90a4a2324a28e62ba0c6898e48414056b2a49a240d50b4f9",
+    "leader_partition.json": "b656e03b414b22f997386931586ce479505bb2c5b0d7ca5919d94546d111f0cc",
+    "minority_partition.json": "0403f321b94a04ed0bb21f780dee79ef5b84de873461ae5dbac22a748fd58776",
+    "rolling_restarts.json": "5d701e8c924be0f790193bc7c4556aa3244eca1115ff0ab5c9a74dee29c41533",
+    "network_delay.json": "7d9130a61a9cd8fedf96cc948a1438f62bb08d1396c8d843a8fe173fa2ae278b",
+    "double_leader_attempt.json": "b43162fcbfe6b86458ade31a4dae7736952b02f82a456c97bb7a660fe2a79364",
+    "source-hashes.json": "cff8e439fb3b48c3d0099937d51e3fb55c7e8fbc549202d4dfa5fe3f81f65ec5"
+  },
+  "published_sha256": {
+    "failover_time.json": "bdb06961df3e458394019f8cc319140c8309c4db63c87dacdad6f4eeafceef70",
+    "concurrent_candidate.json": "ef92ce89f556c9856b3c15bd12717116f838788af08d07a629e8750a9741cd04",
+    "leader_partition.json": "142e3ac20cf9113c4ecbbec7e37470b2e5253978b052ac1c05568496614769c2",
+    "minority_partition.json": "dab63a2090d6f4441634b24018e14c9f16e7f4f42356d5fe361c9a5f025996ce",
+    "rolling_restarts.json": "2dd88c81b429624a860eee78920e9c635ddbc0e179c0d80ccd86a9e1e4f255a1",
+    "network_delay.json": "3f7c640bece873d246d242adfa9a7e75e2958d66e9512bacf93e7fbee19200ca",
+    "double_leader_attempt.json": "3aa1a0e0d6dda486ceacc2d49067da9ffc910435fb8701bf0a776f9ebff6d7af",
+    "source-hashes.json": "fb1146a647a72b9e14559093971c97dbd2d64fc4b3e62cc2907531f1f431017d"
+  }
+}
