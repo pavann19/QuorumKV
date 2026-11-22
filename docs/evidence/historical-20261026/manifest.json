@@ -13,13 +13,13 @@
     "source-hashes.json": "cff8e439fb3b48c3d0099937d51e3fb55c7e8fbc549202d4dfa5fe3f81f65ec5"
   },
   "published_sha256": {
-    "failover_time.json": "46be45a79b004eea7881a00fe6057599310750e4ea81bed798de494a9ec4be33",
-    "concurrent_candidate.json": "a155035f48d6730ff95fa864a403992b5584a1433093e6c12b1896debd2eb3e6",
-    "leader_partition.json": "6da8b35914fd774790fadd31577f58f877ba85616b859385009b3507dd22578f",
-    "minority_partition.json": "323abc066bb229eac6cca4ecdd1f67534f71ee8939e93ce53c10c5ee6368af24",
-    "rolling_restarts.json": "5df4cf8e0ce3446e03156eab025ec3f392650db18abfdccc9a0a1e377e648b7c",
-    "network_delay.json": "50d8b3c2b8a5bddfa2c085832c17205ae98e86578398fc7ac815e6758c61cf31",
-    "double_leader_attempt.json": "50cc1c53f2a4aacfa21f28c2214dfc61581aab6fe7e141b4ca4a205b24e92369",
-    "source-hashes.json": "5f0b0ddb1ec2738aac3521afb0b5059e826d3cc2f7168b3d7a9d883afcd90529"
+    "failover_time.json": "bdb06961df3e458394019f8cc319140c8309c4db63c87dacdad6f4eeafceef70",
+    "concurrent_candidate.json": "ef92ce89f556c9856b3c15bd12717116f838788af08d07a629e8750a9741cd04",
+    "leader_partition.json": "142e3ac20cf9113c4ecbbec7e37470b2e5253978b052ac1c05568496614769c2",
+    "minority_partition.json": "dab63a2090d6f4441634b24018e14c9f16e7f4f42356d5fe361c9a5f025996ce",
+    "rolling_restarts.json": "2dd88c81b429624a860eee78920e9c635ddbc0e179c0d80ccd86a9e1e4f255a1",
+    "network_delay.json": "3f7c640bece873d246d242adfa9a7e75e2958d66e9512bacf93e7fbee19200ca",
+    "double_leader_attempt.json": "3aa1a0e0d6dda486ceacc2d49067da9ffc910435fb8701bf0a776f9ebff6d7af",
+    "source-hashes.json": "fb1146a647a72b9e14559093971c97dbd2d64fc4b3e62cc2907531f1f431017d"
   }
 }

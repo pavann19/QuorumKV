@@ -9,7 +9,7 @@ def main():
     base = Path(__file__).resolve().parents[1] / "docs/evidence/historical-20261026"
     read = lambda name: json.loads((base / (name + ".json")).read_text())
     for name, digest in read("manifest")["published_sha256"].items():
-        assert hashlib.sha256((base / name).read_bytes()).hexdigest() == digest, name
+        assert hashlib.sha256((base / name).read_bytes().replace(b"\r\n", b"\n")).hexdigest() == digest, name
     failover = read("failover_time")
     samples = sorted(failover["samples_ms"])
     assert len(samples) == failover["sample_size"] == 10
