@@ -132,7 +132,13 @@ func (e *DirectedEdge) pump(dst io.Writer, src io.Reader) {
 			d := e.delay
 			e.mu.Unlock()
 			if d > 0 {
-				time.Sleep(d)
+				timer := time.NewTimer(d)
+				select {
+				case <-e.closeCh:
+					timer.Stop()
+					return
+				case <-timer.C:
+				}
 			}
 			if _, werr := dst.Write(buf[:n]); werr != nil {
 				return
@@ -178,7 +184,12 @@ func (e *DirectedEdge) SetDelay(d time.Duration) {
 // Close stops the listener and all active relayed connections.
 func (e *DirectedEdge) Close() error {
 	e.mu.Lock()
+	if e.closed {
+		e.mu.Unlock()
+		return nil
+	}
 	e.closed = true
+	close(e.closeCh)
 	e.generation++
 	conns := make([]net.Conn, 0, len(e.conns))
 	for c := range e.conns {

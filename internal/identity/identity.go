@@ -36,8 +36,9 @@ type Config struct {
 }
 
 type Identity struct {
-	cfg   Config
-	roots *x509.CertPool
+	cfg      Config
+	roots    *x509.CertPool
+	verified verificationCache
 }
 
 func Load(path string) (*Identity, error) {
@@ -145,17 +146,14 @@ func (i *Identity) known(id string) bool {
 	return false
 }
 func (i *Identity) verify(state tls.ConnectionState, expected string, usage x509.ExtKeyUsage) error {
+	return i.verifyAt(state, expected, usage, time.Now())
+}
+
+func (i *Identity) verifyAt(state tls.ConnectionState, expected string, usage x509.ExtKeyUsage, now time.Time) error {
 	if len(state.PeerCertificates) == 0 {
 		return errors.New("client certificate required")
 	}
 	leaf := state.PeerCertificates[0]
-	intermediates := x509.NewCertPool()
-	for _, c := range state.PeerCertificates[1:] {
-		intermediates.AddCert(c)
-	}
-	if _, err := leaf.Verify(x509.VerifyOptions{Roots: i.roots, Intermediates: intermediates, KeyUsages: []x509.ExtKeyUsage{usage}}); err != nil {
-		return err
-	}
 	id := certID(leaf)
 	if expected != "" {
 		if id != expected {
@@ -164,7 +162,7 @@ func (i *Identity) verify(state tls.ConnectionState, expected string, usage x509
 	} else if !i.known(id) {
 		return errors.New("identity not allowed")
 	}
-	return nil
+	return i.verifyChain(state.PeerCertificates, usage, now)
 }
 
 func (i *Identity) ServerCredentials() credentials.TransportCredentials {

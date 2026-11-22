@@ -86,7 +86,9 @@ type Node struct {
 // Cluster is a running, real, multi-process QuorumKV cluster with a
 // faultproxy edge on every directed pair of nodes.
 type Cluster struct {
-	Nodes []*Node
+	Nodes     []*Node
+	clientsMu sync.Mutex
+	clients   map[string]pb.KVClient
 	// Edges[from][to] is the proxy carrying traffic FROM node "from" TO
 	// node "to" -- i.e. it's part of "from"'s outbound view of "to".
 	Edges map[string]map[string]*faultproxy.DirectedEdge
@@ -244,14 +246,32 @@ func (c *Cluster) SetDelay(d time.Duration) {
 // routed through the inter-node faultproxy edges.
 func (c *Cluster) Client(t *testing.T, id string) pb.KVClient {
 	t.Helper()
+	// Reuse the connection across leader probes and process restarts. gRPC owns
+	// reconnection; polling must not retain a new connection until test cleanup.
+	c.clientsMu.Lock()
+	defer c.clientsMu.Unlock()
+	if client := c.clients[id]; client != nil {
+		return client
+	}
 	for _, n := range c.Nodes {
 		if n.ID == id {
 			conn, err := grpc.NewClient(n.RealAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 			if err != nil {
 				t.Fatalf("dialing %s: %v", id, err)
 			}
-			t.Cleanup(func() { conn.Close() })
-			return pb.NewKVClient(conn)
+			// A subtest may borrow the cluster. Keep the shared connection alive
+			// until its owning cluster test ends, rather than the borrower's end.
+			owner := c.t
+			if owner == nil {
+				owner = t
+			}
+			owner.Cleanup(func() { conn.Close() })
+			client := pb.NewKVClient(conn)
+			if c.clients == nil {
+				c.clients = make(map[string]pb.KVClient)
+			}
+			c.clients[id] = client
+			return client
 		}
 	}
 	t.Fatalf("no such node %q", id)

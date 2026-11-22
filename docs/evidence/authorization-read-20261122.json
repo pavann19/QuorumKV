@@ -1,0 +1,265 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-22",
+  "scope": "Historical local Windows development-workspace experiment, Go 1.27.4; not exact publication-commit or hosted-CI performance evidence",
+  "baseline_shared_source_commit": "9cbfeb8ef310a814bc6190f3b2181040193c367f",
+  "identity_before_sha256": "e042530d7d33c8802f1856f6d720270d6614dcff1bcc114aac4a5782a28e118c",
+  "fix_source_sha256": {
+    "internal/identity/identity.go": "797c07fc59c79266a43eae3b34e08720065449f557fe767c38ac127de6117357",
+    "internal/identity/verification_cache.go": "dbde73c61259fdfd7eadb854d9714aaf5744c8b22ddf6ff7badda786e4b2fd69",
+    "internal/faultproxy/proxy.go": "8e3426fedba198cfcb471dedbbde02393a1eef8efc7eae727a3c51f839d5c368",
+    "test/fault/harness.go": "0258070c75ea330387d33a494c05e9e4fe32c8197f548df022447da22aab92ea"
+  },
+  "authorization": {
+    "before": {
+      "samples": [
+        [
+          176387.0,
+          1896.0,
+          38.0
+        ],
+        [
+          189554.0,
+          1896.0,
+          38.0
+        ],
+        [
+          197443.0,
+          1896.0,
+          38.0
+        ],
+        [
+          194104.0,
+          1896.0,
+          38.0
+        ],
+        [
+          212870.0,
+          1896.0,
+          38.0
+        ]
+      ],
+      "median_ns": 194104.0,
+      "bytes_per_call": 1896.0,
+      "allocations_per_call": 38.0
+    },
+    "candidate": {
+      "samples": [
+        [
+          1211.0,
+          96.0,
+          2.0
+        ],
+        [
+          1221.0,
+          96.0,
+          2.0
+        ],
+        [
+          1263.0,
+          96.0,
+          2.0
+        ],
+        [
+          1325.0,
+          96.0,
+          2.0
+        ],
+        [
+          1442.0,
+          96.0,
+          2.0
+        ]
+      ],
+      "median_ns": 1263.0,
+      "bytes_per_call": 96.0,
+      "allocations_per_call": 2.0
+    },
+    "median_time_reduction_percent": 99.34931789143964,
+    "sample_columns": [
+      "nanoseconds_per_call",
+      "allocated_bytes_per_call",
+      "allocations_per_call"
+    ]
+  },
+  "read_order": "before, candidate, candidate, before; three repetitions per transport/read-mode/concurrency profile per binary execution",
+  "read_profile": {
+    "nodes": 3,
+    "value_bytes": 1024,
+    "warm_reads_per_run": 128,
+    "cold_observations_per_run": 8,
+    "repetitions_per_variant_profile": 6,
+    "checks": [
+      "exact value",
+      "no leadership change",
+      "zero read-only Raft log growth on every replica",
+      "zero read-only store WAL syncs on every replica"
+    ]
+  },
+  "mtls_quorum_reads": {
+    "before": {
+      "1": {
+        "runs": 6,
+        "timed_reads": 768,
+        "median_ops_s": 484.1599538562948,
+        "median_p99_ms": 9.8506,
+        "all_ops_s": [
+          475.6131229092066,
+          374.37825423910255,
+          492.706784803383,
+          607.7774622821854,
+          442.37006675295186,
+          563.9663400214748
+        ],
+        "all_p99_ms": [
+          14.1634,
+          11.2619,
+          10.1716,
+          3.2915,
+          9.5296,
+          3.5448
+        ],
+        "errors": []
+      },
+      "4": {
+        "runs": 6,
+        "timed_reads": 768,
+        "median_ops_s": 1219.4323828552322,
+        "median_p99_ms": 10.00675,
+        "all_ops_s": [
+          1361.3429648348094,
+          1077.521800875655,
+          991.7690913613038,
+          1426.6718532132998,
+          1456.5598105561896,
+          1049.9359375025633
+        ],
+        "all_p99_ms": [
+          7.0455,
+          20.7529,
+          13.0325,
+          5.6546,
+          4.8843,
+          12.968
+        ],
+        "errors": []
+      }
+    },
+    "candidate": {
+      "1": {
+        "runs": 6,
+        "timed_reads": 768,
+        "median_ops_s": 731.6587027471385,
+        "median_p99_ms": 3.8829000000000002,
+        "all_ops_s": [
+          754.1984696841677,
+          684.1579485523913,
+          722.8097875221572,
+          759.4208229629871,
+          704.7608245481409,
+          740.5076179721199
+        ],
+        "all_p99_ms": [
+          3.5344,
+          5.7364,
+          3.2295,
+          4.2314,
+          4.3546,
+          3.0429
+        ],
+        "errors": []
+      },
+      "4": {
+        "runs": 6,
+        "timed_reads": 768,
+        "median_ops_s": 1979.9569211973394,
+        "median_p99_ms": 6.15625,
+        "all_ops_s": [
+          2082.164149362744,
+          1877.749693031935,
+          2210.433244916004,
+          1779.0774927238513,
+          1046.2730609208838,
+          2144.06078412323
+        ],
+        "all_p99_ms": [
+          5.1654,
+          8.4628,
+          4.0881,
+          6.1619,
+          29.8809,
+          6.1506
+        ],
+        "errors": []
+      }
+    }
+  },
+  "mixed_load": {
+    "acceptance": "NOT_ACCEPTED_AS_OVERALL_PERFORMANCE_IMPROVEMENT",
+    "writes_per_run": 2048,
+    "reads_per_run": 1024,
+    "replicas": 3,
+    "follower_offline_during_load": true,
+    "runs": {
+      "before": [
+        {
+          "repetition": 0,
+          "history_checked": true,
+          "completed_writes_per_second_under_mixed_load": 110.9694733165557,
+          "read_p99_ns": 12738600,
+          "write_p99_ns": 164119100,
+          "restart_to_exact_catchup_ns": 20105439200
+        },
+        {
+          "repetition": 1,
+          "history_checked": true,
+          "completed_writes_per_second_under_mixed_load": 128.33017428891924,
+          "read_p99_ns": 11106400,
+          "write_p99_ns": 153666800,
+          "restart_to_exact_catchup_ns": 22109430100
+        },
+        {
+          "repetition": 2,
+          "history_checked": true,
+          "completed_writes_per_second_under_mixed_load": 147.48821732619274,
+          "read_p99_ns": 12179500,
+          "write_p99_ns": 124553000,
+          "restart_to_exact_catchup_ns": 47953367500
+        }
+      ],
+      "candidate": [
+        {
+          "repetition": 0,
+          "history_checked": true,
+          "completed_writes_per_second_under_mixed_load": 144.9723620243595,
+          "read_p99_ns": 64837100,
+          "write_p99_ns": 231008300,
+          "restart_to_exact_catchup_ns": 57274448500
+        },
+        {
+          "repetition": 1,
+          "history_checked": true,
+          "completed_writes_per_second_under_mixed_load": 173.30936440000724,
+          "read_p99_ns": 10401700,
+          "write_p99_ns": 102130300,
+          "restart_to_exact_catchup_ns": 26240677900
+        },
+        {
+          "repetition": 2,
+          "history_checked": true,
+          "completed_writes_per_second_under_mixed_load": 137.95653711631712,
+          "read_p99_ns": 18157300,
+          "write_p99_ns": 169426500,
+          "restart_to_exact_catchup_ns": 51304932600
+        }
+      ]
+    }
+  },
+  "limits": [
+    "Short local fixtures; no sustained capacity inference",
+    "Per-run p99 medians, not a pooled percentile",
+    "Raw private receipts retained; selected data are not an independent attestation",
+    "Original failed endurance and mixed-load tail gates remain open"
+  ],
+  "source_hash_encoding": "Raw development-workspace bytes; Git normalizes CRLF to LF. Baseline content was compared after newline normalization."
+}
